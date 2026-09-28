@@ -108,32 +108,53 @@ Log "`n========================================" "Cyan"
 Log "SECTION 2: SVC WORKFLOW TEST" "Cyan"
 Log "========================================" "Cyan"
 
-$svc = Login "vikram.svc@test.com" "password123"
-Log "Logged in as: $($svc.data.user.firstName) $($svc.data.user.lastName) [$($svc.data.profile.name)]" "Yellow"
+# Log in as the SVC Round Robin actually assigned (owner rotates).
+# Seeded RR pool members (svc.testN@dctcrm.com) use the seed-profiles password;
+# suite-created SVC users use password123 — try both.
+$assignedSvcEmail = $leadAfterPush.data.owner.email
+if (-not $assignedSvcEmail) { Fail "SVC assigned owner email" "Owner email missing on lead detail"; $assignedSvcEmail = "vikram.svc@test.com" }
+$svc = $null
+foreach ($pw in @("password123", "DctTest@123")) {
+    try {
+        $candidate = Login $assignedSvcEmail $pw
+        if ($candidate -and $candidate.data -and $candidate.data.token) { $svc = $candidate; break }
+    } catch { }
+}
+if ($svc) {
+    Log "Logged in as: $($svc.data.user.firstName) $($svc.data.user.lastName) [$($svc.data.profile.name)] (assigned owner)" "Yellow"
+} else {
+    Fail "SVC assigned owner login" "Cannot log in as $assignedSvcEmail (password123 and DctTest@123 both rejected)"
+}
 
 # SVC should see the lead pushed by presales
 $svcLeads = AuthGet $svc.session "/api/leads?limit=20"
 $svcLead = $svcLeads.data | Where-Object { $_.id -eq $pl1.data.id }
-if ($svcLead) { Pass "SVC sees assigned lead" } else { Fail "SVC sees assigned lead" "Lead not found in SVC list" }
+if ($svcLead) { Pass "SVC sees assigned lead" } else { Fail "SVC sees assigned lead" "Lead not found in SVC list (owner: $assignedSvcEmail)" }
 
 # Verify lead is in PROSPECT status
 Log "  Lead status: $($svcLead.status)" "Gray"
 
-# Test site visit creation - missing project
-ShouldFailRaw $svc.session "POST" "/api/leads/$($pl1.data.id)/schedule-site-visit" '{"notes":"Visit needed","scheduledAt":"2026-10-01T10:00:00.000Z"}' "Site visit without project rejected"
+# Test site visit creation (scheduling requires Lead edit — admin drives setup; the
+# assigned SVC executes visits but cannot schedule: authorize('Lead','edit'))
+$adminSess = (Login "admin@dctcrm.com" "password123").session
+ShouldFailRaw $adminSess "POST" "/api/leads/$($pl1.data.id)/schedule-site-visit" '{"notes":"Visit needed","scheduledAt":"2026-10-01T10:00:00.000Z"}' "Site visit without project rejected"
 
 # Test site visit creation - missing notes
-$projects = AuthGet $svc.session "/api/projects?limit=1"
+$projects = AuthGet $adminSess "/api/projects?limit=1"
 $projId = if ($projects.data.Count -gt 0) { $projects.data[0].id } else { $null }
 if ($projId) {
-    ShouldFailRaw $svc.session "POST" "/api/leads/$($pl1.data.id)/schedule-site-visit" "{`"projectId`":`"$projId`",`"scheduledAt`":`"2026-10-01T10:00:00.000Z`"}" "Site visit without notes rejected"
-    ShouldFailRaw $svc.session "POST" "/api/leads/$($pl1.data.id)/schedule-site-visit" "{`"projectId`":`"$projId`",`"notes`":`"Visit reason`"}" "Site visit without date rejected"
+    ShouldFailRaw $adminSess "POST" "/api/leads/$($pl1.data.id)/schedule-site-visit" "{`"projectId`":`"$projId`",`"scheduledAt`":`"2026-10-01T10:00:00.000Z`"}" "Site visit without notes rejected"
+    ShouldFailRaw $adminSess "POST" "/api/leads/$($pl1.data.id)/schedule-site-visit" "{`"projectId`":`"$projId`",`"notes`":`"Visit reason`"}" "Site visit without date rejected"
     
     # Successful site visit
-    $svResp = AuthPostRaw $svc.session "/api/leads/$($pl1.data.id)/schedule-site-visit" "{`"projectId`":`"$projId`",`"notes`":`"Initial site visit`",`"scheduledAt`":`"2026-10-01T10:00:00.000Z`"}"
-    Log "  Site visit created. Lead status: $($svResp.data.lead.status)" "Gray"
-    Pass "Site visit creation with all fields"
-    Pass "Status PROSPECT -> SITE_VISIT_SCHEDULED"
+    $svResp = AuthPostRaw $adminSess "/api/leads/$($pl1.data.id)/schedule-site-visit" "{`"projectId`":`"$projId`",`"notes`":`"Initial site visit`",`"scheduledAt`":`"2026-10-01T10:00:00.000Z`"}"
+    if ($svResp.success -and $svResp.data.lead.status -eq "SITE_VISIT_SCHEDULED") {
+        Log "  Site visit created. Lead status: $($svResp.data.lead.status)" "Gray"
+        Pass "Site visit creation with all fields"
+        Pass "Status PROSPECT -> SITE_VISIT_SCHEDULED"
+    } else {
+        Fail "Site visit creation with all fields" "status=$($svResp.data.lead.status) err=$($svResp.error)"
+    }
 } else {
     Log "  WARNING: No projects found, skipping site visit tests" "Yellow"
 }
@@ -159,7 +180,8 @@ if ($salesLead) {
     $svList = AuthGet $sales.session "/api/site-visits?leadId=$($pl1.data.id)&limit=1"
     if ($svList.data.Count -gt 0) {
         $svId = $svList.data[0].id
-        $completeResp = Invoke-RestMethod -Uri "$baseUrl/api/site-visits/$svId/complete" -Method PATCH -ContentType "application/json" -Body '{}' -WebSession $sales.session
+        $completeBody = @{ completedAt=(Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.000Z"); customerFeedback="Sales follow-up"; completionNotes="Visit completed" } | ConvertTo-Json
+        $completeResp = Invoke-RestMethod -Uri "$baseUrl/api/site-visits/$svId/complete" -Method PATCH -ContentType "application/json" -Body $completeBody -WebSession $sales.session
         Log "  Site visit completed. Lead status should be SITE_VISIT_HAPPENED" "Gray"
         Pass "Complete site visit"
         

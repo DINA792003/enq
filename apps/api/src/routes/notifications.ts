@@ -109,6 +109,19 @@ router.put('/read-all', async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.delete('/clear-all', async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await prisma.notification.deleteMany({
+      where: { tenantId: req.tenantId!, userId: req.user!.id, isRead: true },
+    });
+
+    res.json({ success: true, data: { deleted: result.count } });
+  } catch (error) {
+    console.error('Clear all notifications error:', error);
+    res.status(500).json({ success: false, error: 'Failed to clear notifications' });
+  }
+});
+
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
     const notification = await prisma.notification.findFirst({
@@ -125,19 +138,6 @@ router.delete('/:id', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Delete notification error:', error);
     res.status(500).json({ success: false, error: 'Failed to delete notification' });
-  }
-});
-
-router.delete('/clear-all', async (req: AuthRequest, res: Response) => {
-  try {
-    const result = await prisma.notification.deleteMany({
-      where: { tenantId: req.tenantId!, userId: req.user!.id, isRead: true },
-    });
-
-    res.json({ success: true, data: { deleted: result.count } });
-  } catch (error) {
-    console.error('Clear all notifications error:', error);
-    res.status(500).json({ success: false, error: 'Failed to clear notifications' });
   }
 });
 

@@ -172,7 +172,7 @@ export default function BookingDetailPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{booking.bookingNumber}</h1>
+            <h1 className="text-xl font-semibold">{booking.bookingNumber}</h1>
             <p className="text-muted-foreground">Booking for {booking.leadName}</p>
           </div>
         </div>
@@ -243,11 +243,7 @@ export default function BookingDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Booking Date</p>
                 <p className="text-sm font-medium">
-                  {new Date(booking.bookingDate).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  {formatDate(booking.bookingDate)}
                 </p>
               </div>
             </div>

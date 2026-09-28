@@ -3,6 +3,8 @@ import { prisma } from '@dct-crm/db';
 import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
+import { getOpportunityVisibilityFilter } from '../services/recordAccess';
+import { EffectivePermissionService } from '../services/effectivePermissions';
 
 const router = Router();
 
@@ -247,7 +249,11 @@ router.post('/:id/widgets/:widgetId/data', authorize('Dashboard', 'read'), async
 
     const metricMap: Record<string, () => Promise<any>> = {
       totalLeads: async () => prisma.lead.count({ where: { tenantId: req.tenantId! } }),
-      totalOpportunities: async () => prisma.opportunity.count({ where: { tenantId: req.tenantId! } }),
+      totalOpportunities: async () => {
+        const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user!, req.user!.id);
+        if (!EffectivePermissionService.hasPermissionIn(perms, 'OPPORTUNITY_READ')) return 0;
+        return prisma.opportunity.count({ where: await getOpportunityVisibilityFilter(req.tenantId!, req.user!.id, 'read') });
+      },
       totalBookings: async () => prisma.booking.count({ where: { tenantId: req.tenantId! } }),
       totalRevenue: async () => {
         const result = await prisma.payment.aggregate({
@@ -268,12 +274,12 @@ router.post('/:id/widgets/:widgetId/data', authorize('Dashboard', 'read'), async
         const [countByStage, amountByStage] = await Promise.all([
           prisma.opportunity.groupBy({
             by: ['stage'],
-            where: { tenantId: req.tenantId! },
+            where: await getOpportunityVisibilityFilter(req.tenantId!, req.user!.id, 'read'),
             _count: { id: true },
           }),
           prisma.opportunity.groupBy({
             by: ['stage'],
-            where: { tenantId: req.tenantId!, amount: { not: null } },
+            where: { ...(await getOpportunityVisibilityFilter(req.tenantId!, req.user!.id, 'read')), amount: { not: null } },
             _sum: { amount: true },
           }),
         ]);

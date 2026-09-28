@@ -309,7 +309,7 @@ export default function LayoutEditor({
                           </span>
                           <Badge
                             variant="secondary"
-                            className="ml-auto text-[10px] shrink-0"
+                            className="ml-auto text-[11px] shrink-0"
                           >
                             {fieldName}
                           </Badge>
@@ -610,7 +610,7 @@ function AddFieldDropdown({
               }}
             >
               <span>{getFieldLabel(fieldName)}</span>
-              <span className="text-muted-foreground text-[10px]">
+              <span className="text-muted-foreground text-[11px]">
                 {fieldName}
               </span>
             </button>

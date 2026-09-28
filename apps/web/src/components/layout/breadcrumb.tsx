@@ -24,6 +24,7 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
 
     const segments = pathname.split("/").filter(Boolean);
     const breadcrumbs: BreadcrumbItem[] = [];
+    const prefixesWithoutPage = ["/objects", "/profiles"];
 
     segments.forEach((segment, index) => {
       const href = `/${segments.slice(0, index + 1).join("/")}`;
@@ -31,7 +32,11 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
         .replace(/[-_]/g, " ")
         .replace(/\b\w/g, (c) => c.toUpperCase());
 
-      breadcrumbs.push({ label, href });
+      if (index < segments.length - 1 && prefixesWithoutPage.includes(href)) {
+        breadcrumbs.push({ label, href: undefined });
+      } else {
+        breadcrumbs.push({ label, href });
+      }
     });
 
     return breadcrumbs;
@@ -40,16 +45,16 @@ export function Breadcrumb({ items, className }: BreadcrumbProps) {
   const breadcrumbs = generateBreadcrumbs();
 
   return (
-    <nav className={cn("flex items-center space-x-1 text-sm text-muted-foreground", className)}>
+    <nav className={cn("flex items-center space-x-1 text-xs text-muted-foreground", className)}>
       <Link
-        href="/dashboard"
+        href="/home"
         className="flex items-center hover:text-foreground transition-colors"
       >
-        <Home className="h-4 w-4" />
+        <Home className="h-3.5 w-3.5" />
       </Link>
       {breadcrumbs.map((breadcrumb, index) => (
         <React.Fragment key={index}>
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="h-3.5 w-3.5" />
           {breadcrumb.href ? (
             <Link
               href={breadcrumb.href}

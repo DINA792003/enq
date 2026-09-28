@@ -1084,23 +1084,23 @@ export default function NewReportPage() {
       ? node.rows.slice(0, hasRun ? node.rows.length : 20)
       : [];
     return [
-      <tr key={node.key} className={`border-b border-slate-200 hover:bg-slate-50 ${node.depth === 0 ? "font-medium" : "text-slate-700"}`}>
+      <tr key={node.key} className={`border-b border-slate-200 hover:bg-muted/50 ${node.depth === 0 ? "font-medium" : "text-slate-700"}`}>
         {rowGroups.map((field, index) => <td key={field} className="border-r border-slate-200 px-3 py-2" style={{ paddingLeft: `${12 + (node.depth > 0 && index === node.depth ? 20 : 0)}px` }}>
-          {index === node.depth && <button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [node.key]: !collapsed }))} className="mr-1 text-[10px]" aria-label={`${collapsed ? "Expand" : "Collapse"} ${node.value}`}>{collapsed ? "▶" : "▼"}</button>}
+          {index === node.depth && <button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [node.key]: !collapsed }))} className="mr-1 text-[11px]" aria-label={`${collapsed ? "Expand" : "Collapse"} ${node.value}`}>{collapsed ? "▶" : "▼"}</button>}
           {index === node.depth ? formatGroupedValue(field, node.value) : ""}
         </td>)}
         {showRowCounts && <td className="border-r border-slate-200 px-3 py-2 text-center">{node.count}</td>}
         {summaryLabels.map((label) => <td key={label} className="border-r border-slate-200 px-3 py-2 text-center">{node.summary[label] ?? 0}</td>)}
       </tr>,
       ...(!collapsed ? renderGroupTree(node.children) : []),
-      ...detailRows.map((row, rowIndex) => <tr key={`${node.key}-detail-${rowIndex}`} className="border-b border-slate-100 bg-slate-50/40">
+      ...detailRows.map((row, rowIndex) => <tr key={`${node.key}-detail-${rowIndex}`} className="border-b border-slate-100 bg-muted/40">
         <td colSpan={rowGroups.length + (showRowCounts ? 1 : 0) + summaryLabels.length} className="p-0">
           <div className="grid min-w-[700px] border-l-2 border-primary/20 text-xs text-slate-600" style={{ gridTemplateColumns: `repeat(${result?.columns.length || 1}, minmax(120px, 1fr))` }}>
-            {result?.columns.map((column) => <div key={column} className="border-r border-slate-100 px-3 py-1.5"><span className="mr-1 text-[10px] font-medium text-slate-400">{fieldLabel(column)}:</span>{row[column] == null ? "-" : String(row[column])}</div>)}
+            {result?.columns.map((column) => <div key={column} className="border-r border-slate-100 px-3 py-1.5"><span className="mr-1 text-[11px] font-medium text-slate-400">{fieldLabel(column)}:</span>{row[column] == null ? "-" : String(row[column])}</div>)}
           </div>
         </td>
       </tr>),
-      ...(showSubtotals && node.children.length === 0 ? [<tr key={`${node.key}-subtotal`} className="border-b bg-slate-50 font-semibold"><td colSpan={rowGroups.length + (showRowCounts ? 1 : 0)} className="px-3 py-2 text-right">Subtotal</td>{summaryLabels.map((label) => <td key={label} className="px-3 py-2 text-center">{node.summary[label] ?? 0}</td>)}</tr>] : []),
+      ...(showSubtotals && node.children.length === 0 ? [<tr key={`${node.key}-subtotal`} className="border-b bg-muted/50 font-semibold"><td colSpan={rowGroups.length + (showRowCounts ? 1 : 0)} className="px-3 py-2 text-right">Subtotal</td>{summaryLabels.map((label) => <td key={label} className="px-3 py-2 text-center">{node.summary[label] ?? 0}</td>)}</tr>] : []),
     ];
   });
   const renderTabularGroupTree = (nodes: GroupTreeNode[]): React.ReactNode[] => nodes.flatMap((node) => {
@@ -1108,22 +1108,22 @@ export default function NewReportPage() {
     return [
       <tr key={`${node.key}-header`} className="border-b border-slate-300 bg-primary/5 hover:bg-primary/10">
         {rowGroups.map((field, index) => <td key={field} className="border-r border-slate-200 px-3 py-2 font-semibold text-primary">
-          {index === node.depth && <><button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [node.key]: !collapsed }))} className="mr-2 text-[10px]" aria-label={`${collapsed ? "Expand" : "Collapse"} ${node.value}`}>{collapsed ? "▶" : "▼"}</button>{node.value}{showRowCounts && <span className="ml-1 font-normal text-muted-foreground">({node.count})</span>}</>}
+          {index === node.depth && <><button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [node.key]: !collapsed }))} className="mr-2 text-[11px]" aria-label={`${collapsed ? "Expand" : "Collapse"} ${node.value}`}>{collapsed ? "▶" : "▼"}</button>{node.value}{showRowCounts && <span className="ml-1 font-normal text-muted-foreground">({node.count})</span>}</>}
         </td>)}
         {(result?.columns || []).map((column) => <td key={column} className="border-r border-slate-200 px-3 py-2" />)}
       </tr>,
       ...(!collapsed ? renderTabularGroupTree(node.children) : []),
-      ...(!collapsed && showDetailRows && node.children.length === 0 ? node.rows.slice(0, hasRun ? node.rows.length : 20).map((row, rowIndex) => <tr key={`${node.key}-detail-${rowIndex}`} className="border-b border-slate-200 hover:bg-slate-50">
+      ...(!collapsed && showDetailRows && node.children.length === 0 ? node.rows.slice(0, hasRun ? node.rows.length : 20).map((row, rowIndex) => <tr key={`${node.key}-detail-${rowIndex}`} className="border-b border-slate-200 hover:bg-muted/50">
         {rowGroups.map((field) => <td key={field} className="border-r border-slate-200 px-3 py-2" />)}
         {result?.columns.map((column) => <td key={column} className="border-r border-slate-200 px-3 py-2">{row[column] == null ? "-" : String(row[column])}</td>)}
       </tr>) : []),
-      ...(showSubtotals && node.children.length === 0 ? [<tr key={`${node.key}-subtotal`} className="border-b bg-slate-50 font-semibold"><td colSpan={rowGroups.length + (result?.columns.length || 0)} className="px-3 py-2 text-right">Subtotal: {node.count}</td></tr>] : []),
+      ...(showSubtotals && node.children.length === 0 ? [<tr key={`${node.key}-subtotal`} className="border-b bg-muted/50 font-semibold"><td colSpan={rowGroups.length + (result?.columns.length || 0)} className="px-3 py-2 text-right">Subtotal: {node.count}</td></tr>] : []),
     ];
   });
   const renderSummaryGroupRows = (nodes: GroupTreeNode[]): React.ReactElement[] => nodes.flatMap((node) => {
     if (node.children.length) return renderSummaryGroupRows(node.children);
     return [
-      <tr key={`${node.key}-summary`} className="border-b border-slate-200 hover:bg-slate-50">
+      <tr key={`${node.key}-summary`} className="border-b border-slate-200 hover:bg-muted/50">
         {rowGroups.map((field) => <td key={field} className="border-r border-slate-200 px-3 py-2 text-primary">{node.values[field] || "(Blank)"}</td>)}
         {showRowCounts && <td className="border-r border-slate-200 px-3 py-2 text-center">{node.count}</td>}
       </tr>,
@@ -1138,7 +1138,7 @@ export default function NewReportPage() {
     );
 
   return (
-    <div className="-m-4 flex min-h-[calc(100vh-64px)] flex-col bg-slate-50 md:-m-6">
+    <div className="-m-4 flex min-h-[calc(100vh-64px)] flex-col bg-background md:-m-6">
       <header className="border-b border-slate-200 bg-white">
         <div className="flex min-h-[104px] flex-wrap items-center justify-between gap-5 px-6 py-5">
           <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1149,16 +1149,16 @@ export default function NewReportPage() {
             </Button>
 
             <div className="flex min-w-0 items-center gap-5">
-              <div className="flex items-center gap-2 text-lg font-bold uppercase text-[#b52d2d]">
+              <div className="flex items-center gap-2 text-lg font-bold uppercase text-primary">
                 <span>Report</span>
                 <ChevronDown className="h-3.5 w-3.5" />
               </div>
 
               <div className="flex min-w-0 items-center gap-4">
-                <h1 className="truncate text-4xl font-bold tracking-tight text-slate-900">
+                <h1 className="truncate text-xl font-semibold tracking-tight text-slate-900">
                   {reportName || "Untitled Report"}
                 </h1>
-                <span className="shrink-0 rounded-xl bg-slate-200 px-4 py-2 text-base font-semibold text-slate-600">
+                <span className="shrink-0 rounded-lg bg-slate-200 px-4 py-2 text-base font-semibold text-slate-600">
                   {object?.name || "Select a Report Type"}
                 </span>
               </div>
@@ -1174,7 +1174,7 @@ export default function NewReportPage() {
               type="button"
               variant="outline"
               size="sm"
-              className="h-11 rounded-full px-5 text-base"
+              className="h-9 rounded-md px-4 text-[13px]"
               onClick={() => {
                 if (editingReportId) {
                   void saveReport();
@@ -1187,7 +1187,7 @@ export default function NewReportPage() {
             <Button
               variant="outline"
               size="sm"
-              className="h-11 rounded-full px-5 text-base"
+              className="h-9 rounded-md px-4 text-[13px]"
               onClick={() => {
                 if (editingReportId) {
                   void saveReport();
@@ -1199,8 +1199,8 @@ export default function NewReportPage() {
             >
               Save {!editingReportId && <ChevronDown className="ml-2 h-3.5 w-3.5" />}
             </Button>
-            <Button type="button" variant="outline" size="sm" className="h-11 rounded-full px-5 text-base" onClick={closeReportBuilder}>Close</Button>
-            <Button type="button" size="sm" className="h-11 rounded-full bg-[#d94444] px-6 text-base hover:bg-[#bd3636]" onClick={runAndPreviewReport} disabled={running || !selectedFields.length}><Play className="mr-2 h-4 w-4" />{running ? "Running..." : "Run"}</Button>
+            <Button type="button" variant="outline" size="sm" className="h-9 rounded-md px-4 text-[13px]" onClick={closeReportBuilder}>Close</Button>
+            <Button type="button" size="sm" className="h-9 rounded-md bg-primary px-4 text-[13px] hover:bg-primary/90" onClick={runAndPreviewReport} disabled={running || !selectedFields.length}><Play className="mr-2 h-4 w-4" />{running ? "Running..." : "Run"}</Button>
           </div>
         </div>
       </header>
@@ -1220,19 +1220,19 @@ export default function NewReportPage() {
           </div>
           <div className="flex border-b">
             <button
-              className={`flex-1 px-4 py-5 text-lg font-semibold ${panel === "outline" ? "border-b-4 border-[#b52d2d] text-slate-700" : "text-slate-500"}`}
+              className={`flex-1 px-4 py-5 text-lg font-semibold ${panel === "outline" ? "border-b-4 border-primary text-slate-700" : "text-slate-500"}`}
               onClick={() => setPanel("outline")}
             >
               <span className="mr-1 text-base">☷</span>Outline
             </button>
             <button
-              className={`flex-1 px-4 py-5 text-lg font-semibold ${panel === "filters" ? "border-b-4 border-[#b52d2d] text-slate-700" : "text-slate-500"}`}
+              className={`flex-1 px-4 py-5 text-lg font-semibold ${panel === "filters" ? "border-b-4 border-primary text-slate-700" : "text-slate-500"}`}
               onClick={() => setPanel("filters")}
             >
               <Filter className="mr-1 inline h-3.5 w-3.5" />
               Filters{" "}
               {validFilters.length > 0 && (
-                <Badge className="ml-1 h-6 min-w-6 justify-center rounded-md bg-[#d94141] px-1.5 text-white">{validFilters.length}</Badge>
+                <Badge className="ml-1 h-6 min-w-6 justify-center rounded-md bg-primary px-1.5 text-white">{validFilters.length}</Badge>
               )}
             </button>
           </div>
@@ -1296,7 +1296,7 @@ export default function NewReportPage() {
                 </div>
                 {rowGroupPickerOpen && (
                   <div data-group-picker="rows" className="absolute z-50 mt-1 max-h-56 w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border bg-white p-1 shadow-lg">
-                    {!rowGroupSearch && <div className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Available Fields</div>}
+                    {!rowGroupSearch && <div className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Available Fields</div>}
                     {visibleRowGroupFields.length === 0 ? <div className="px-2 py-2 text-xs text-muted-foreground">No matching fields</div> : visibleRowGroupFields.map((field) => (
                       <button key={field.key} type="button" draggable onDragStart={(event) => { event.dataTransfer.setData("text/plain", field.key); event.dataTransfer.setData("group-axis", "fields"); }} onMouseDown={(event) => { event.preventDefault(); addRowGroup(field.key); setRowGroupSearch(""); }} className={`flex w-full items-center rounded px-2 py-1.5 text-left text-xs ${visibleRowGroupFields[rowGroupHighlight]?.key === field.key ? "bg-primary/10" : "hover:bg-primary/10"}`}><span>{field.label}</span></button>
                     ))}
@@ -1318,7 +1318,7 @@ export default function NewReportPage() {
                       if (draggedField && from === "rows") reorderGroup(draggedField, "rows", index);
                       if (draggedField && from === "columns") moveGroupBetweenAxes(draggedField, from, "rows");
                     }}
-                    className="group mb-2 flex min-h-10 items-center justify-between rounded-xl border border-transparent bg-slate-100 px-3 py-2 text-sm text-[#5c211d] transition-colors hover:bg-slate-200"
+                    className="group mb-2 flex min-h-10 items-center justify-between rounded-lg border border-transparent bg-slate-100 px-3 py-2 text-sm text-[#5c211d] transition-colors hover:bg-slate-200"
                   >
                     <span className="min-w-0 truncate">{fieldLabel(field)}</span>
                     <button
@@ -1370,7 +1370,7 @@ export default function NewReportPage() {
                 </div>
                 {columnGroupPickerOpen && (
                   <div data-group-picker="columns" className="absolute z-50 mt-1 max-h-56 w-[calc(100%-1.5rem)] overflow-y-auto rounded-md border bg-white p-1 shadow-lg">
-                    {!columnGroupSearch && <div className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Available Fields</div>}
+                    {!columnGroupSearch && <div className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Available Fields</div>}
                     {visibleColumnGroupFields.length === 0 ? <div className="px-2 py-2 text-xs text-muted-foreground">No matching fields</div> : visibleColumnGroupFields.map((field) => (
                       <button key={field.key} type="button" draggable onDragStart={(event) => { event.dataTransfer.setData("text/plain", field.key); event.dataTransfer.setData("group-axis", "fields"); }} onMouseDown={(event) => { event.preventDefault(); addColumnGroup(field.key); setColumnGroupSearch(""); }} className={`flex w-full items-center rounded px-2 py-1.5 text-left text-xs ${visibleColumnGroupFields[columnGroupHighlight]?.key === field.key ? "bg-primary/10" : "hover:bg-primary/10"}`}><span>{field.label}</span></button>
                     ))}
@@ -1392,7 +1392,7 @@ export default function NewReportPage() {
                       if (draggedField && from === "columns") reorderGroup(draggedField, "columns", index);
                       if (draggedField && from === "rows") moveGroupBetweenAxes(draggedField, from, "columns");
                     }}
-                    className="group mb-2 flex min-h-10 items-center justify-between rounded-xl border border-transparent bg-slate-100 px-3 py-2 text-sm text-[#5c211d] transition-colors hover:bg-slate-200"
+                    className="group mb-2 flex min-h-10 items-center justify-between rounded-lg border border-transparent bg-slate-100 px-3 py-2 text-sm text-[#5c211d] transition-colors hover:bg-slate-200"
                   >
                     <span className="min-w-0 truncate">{fieldLabel(field)}</span>
                     <button type="button" onClick={() => removeColumnGroup(field)} aria-label={`Remove ${fieldLabel(field)} column group`}>
@@ -1429,7 +1429,7 @@ export default function NewReportPage() {
                   </div>
                   {columnPickerOpen && (
                   <div data-column-picker="columns" className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-md border bg-white p-1 shadow-lg">
-                    {!fieldSearch && <div className="px-2 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Available Fields</div>}
+                    {!fieldSearch && <div className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Available Fields</div>}
                     {visibleFields.filter((field) => !selectedFields.includes(field.key)).length === 0 ? <div className="px-2 py-2 text-xs text-muted-foreground">No matching fields</div> : visibleFields.filter((field) => !selectedFields.includes(field.key)).map((field) => (
                       <button
                         key={field.key}
@@ -1453,7 +1453,7 @@ export default function NewReportPage() {
                   )}
                 </div>
                 {selectedFields.map((key) => (
-                  <div key={key} className="mb-2 rounded-xl border border-transparent bg-slate-100 px-3 py-2 text-sm text-[#5c211d]">
+                  <div key={key} className="mb-2 rounded-lg border border-transparent bg-slate-100 px-3 py-2 text-sm text-[#5c211d]">
                     <div className="flex items-center justify-between gap-1">
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{columnLabel(key)}</span>
                       <button type="button" onClick={() => toggleField(key)} aria-label={`Remove ${fieldLabel(key)}`}><X className="h-3.5 w-3.5" /></button>
@@ -1474,22 +1474,22 @@ export default function NewReportPage() {
                   <h3 className="text-base font-semibold text-slate-500">Filters</h3>
                   <p className="text-xs text-muted-foreground">{filterSummary}</p>
                 </div>
-                <button type="button" onClick={() => setFilterActionsOpen((current) => !current)} aria-label="Filter actions" className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-500 text-[#b52d2d] hover:bg-slate-100">
+                <button type="button" onClick={() => setFilterActionsOpen((current) => !current)} aria-label="Filter actions" className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-500 text-primary hover:bg-muted/50">
                   <ChevronDown className={`h-4 w-4 transition-transform ${filterActionsOpen ? "rotate-180" : ""}`} />
                 </button>
                   {filterActionsOpen && <div className="absolute right-0 top-11 z-50 w-52 rounded-lg border bg-white p-1 shadow-lg">
-                    <button type="button" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-100" onClick={() => { setFilterActionsOpen(false); setCrossFilterEditorOpen(true); }}>Add Cross Filter</button>
-                    <button type="button" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-slate-100" onClick={() => { setFilterActionsOpen(false); setRowLimitEditorOpen(true); }}>Add Row Limit</button>
+                    <button type="button" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted/50" onClick={() => { setFilterActionsOpen(false); setCrossFilterEditorOpen(true); }}>Add Cross Filter</button>
+                    <button type="button" className="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted/50" onClick={() => { setFilterActionsOpen(false); setRowLimitEditorOpen(true); }}>Add Row Limit</button>
                 </div>}
               </div>
               {rowLimitEditorOpen && (
-                <div className="mb-3 rounded-xl border-2 border-blue-500 bg-white p-2.5">
+                <div className="mb-3 rounded-lg border-2 border-blue-500 bg-white p-2.5">
                   <div className="flex items-center justify-between text-sm font-medium text-slate-600"><span>Row Limit</span><button type="button" onClick={() => { setRowLimitEditorOpen(false); setRowLimit(10000); }} aria-label="Remove row limit"><Trash2 className="h-4 w-4 text-red-500" /></button></div>
                   <input type="number" min={1} max={10000} value={rowLimit} onChange={(event) => setRowLimit(Math.max(1, Math.min(10000, Number(event.target.value) || 1)))} className="mt-1 h-9 w-full rounded border bg-white px-2 text-sm text-slate-700" aria-label="Row limit" />
                 </div>
               )}
               {crossFilterEditorOpen && (
-                <div className="mb-3 rounded-lg border bg-slate-50 p-3">
+                <div className="mb-3 rounded-lg border bg-muted/50 p-3">
                   <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-600"><span>Cross Filter</span><button type="button" onClick={() => setCrossFilterEditorOpen(false)} aria-label="Close cross filter"><X className="h-4 w-4" /></button></div>
                   <select value={crossFilterObject} onChange={(event) => setCrossFilterObject(event.target.value)} className="mb-2 h-9 w-full rounded border bg-white px-2 text-sm">
                     <option value="">Select a related object</option>
@@ -1501,9 +1501,9 @@ export default function NewReportPage() {
                   </select>
                 </div>
               )}
-              {crossFilterObject && <div className="mb-2 flex items-center justify-between rounded-xl border-2 border-slate-300 bg-white px-3 py-2.5 text-sm"><span><span className="block font-medium text-slate-500">Cross Filter</span><span className="text-[#5c211d]">{crossFilterMode === "with" ? "With" : "Without"} {crossFilterObject}</span></span><button type="button" onClick={() => { setCrossFilterObject(""); setCrossFilterEditorOpen(false); }} aria-label="Remove cross filter"><Trash2 className="h-4 w-4 text-red-500" /></button></div>}
+              {crossFilterObject && <div className="mb-2 flex items-center justify-between rounded-lg border-2 border-slate-300 bg-white px-3 py-2.5 text-sm"><span><span className="block font-medium text-slate-500">Cross Filter</span><span className="text-[#5c211d]">{crossFilterMode === "with" ? "With" : "Without"} {crossFilterObject}</span></span><button type="button" onClick={() => { setCrossFilterObject(""); setCrossFilterEditorOpen(false); }} aria-label="Remove cross filter"><Trash2 className="h-4 w-4 text-red-500" /></button></div>}
               <div ref={filterFieldPickerRef} className="relative mb-3">
-                <div className={`flex h-11 items-center rounded-xl border-2 bg-white ${filterFieldPickerOpen ? "border-primary ring-1 ring-primary/20" : "border-slate-300"}`}>
+                <div className={`flex h-9 items-center rounded-md border bg-white ${filterFieldPickerOpen ? "border-primary ring-1 ring-primary/20" : "border-slate-300"}`}>
                   <Search className="ml-3 h-4 w-4 text-muted-foreground" />
                   <input
                     value={filterFieldPicker}
@@ -1516,35 +1516,35 @@ export default function NewReportPage() {
                   />
                 </div>
                 {filterFieldPickerOpen && (
-                  <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-xl border bg-white p-1 shadow-lg">
+                  <div className="absolute z-50 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border bg-white p-1 shadow-lg">
                     {fields.filter((field) => `${field.label} ${field.key}`.toLowerCase().includes(filterFieldPicker.toLowerCase())).length === 0 ? <div className="px-3 py-3 text-sm text-muted-foreground">No fields found</div> : Object.entries(fields.filter((field) => `${field.label} ${field.key}`.toLowerCase().includes(filterFieldPicker.toLowerCase())).reduce<Record<string, Field[]>>((groups, field) => {
                       const category = field.type.toLowerCase().includes("date") ? "DATE FIELDS" : field.type.toLowerCase() === "enum" ? "PICKLIST FIELDS" : "GENERAL FIELDS";
                       (groups[category] ||= []).push(field);
                       return groups;
                     }, {})).map(([category, categoryFields]) => <div key={category}>
-                      <div className="px-3 py-2 text-[10px] font-bold tracking-wide text-slate-500">{category}</div>
+                      <div className="px-3 py-2 text-[11px] font-bold tracking-wide text-slate-500">{category}</div>
                       {categoryFields.map((field) => <button key={field.key} type="button" onMouseDown={(event) => { event.preventDefault(); addFilter(field.key); setFilterFieldPicker(""); setFilterFieldPickerOpen(false); }} className="flex w-full items-center rounded px-3 py-2 text-left text-sm hover:bg-primary/10">{field.label}</button>)}
                     </div>)}
                   </div>
                 )}
               </div>
-              <div className="mb-2 rounded-xl border-2 border-slate-300 bg-white px-4 py-2.5">
+              <div className="mb-2 rounded-lg border-2 border-slate-300 bg-white px-4 py-2.5">
                 <label className="block text-sm text-slate-500">Show Me
-                  <select value={showMe} onChange={(event) => setShowMe(event.target.value as "all" | "mine")} className="mt-0.5 block w-full appearance-none bg-transparent text-base font-medium text-[#5c211d] outline-none">
+                  <select value={showMe} onChange={(event) => setShowMe(event.target.value as "all" | "mine")} className="h-9 mt-0.5 block w-full appearance-none bg-transparent text-base font-medium text-[#5c211d] outline-none">
                     <option value="all">All records</option>
                     <option value="mine">My records</option>
                   </select>
                 </label>
               </div>
               {filters.length === 0 && (
-                <p className="rounded-md border border-dashed bg-slate-50 p-3 text-xs text-muted-foreground">
+                <p className="rounded-md border border-dashed bg-muted/50 p-3 text-xs text-muted-foreground">
                   No filters. All records will be included.
                 </p>
               )}
               {filters.map((filter, index) => (
                 <div
                   key={index}
-                  className="mb-2 cursor-pointer rounded-xl border-2 border-slate-300 bg-white p-2.5 shadow-sm transition hover:border-primary"
+                  className="mb-2 cursor-pointer rounded-lg border-2 border-slate-300 bg-white p-2.5 shadow-sm transition hover:border-primary"
                   onClick={() => openFilterEditor(filter.field, index)}
                 >
                   <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-muted-foreground">
@@ -1561,7 +1561,7 @@ export default function NewReportPage() {
                 </div>
               ))}
               {filterEditorOpen && filterEditorIndex === null && filterDraft && (
-                <div className="mb-2 rounded-xl border-2 border-blue-500 bg-white px-3 py-2.5 shadow-sm">
+                <div className="mb-2 rounded-lg border-2 border-blue-500 bg-white px-3 py-2.5 shadow-sm">
                   <div className="flex items-center justify-between text-sm font-medium text-slate-500">
                     <span>{fieldLabel(filterDraft.field)}</span>
                     <span className="text-blue-600">Editing</span>
@@ -1574,7 +1574,7 @@ export default function NewReportPage() {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex min-h-8 items-center justify-between border-b bg-slate-100 px-2 text-xs text-slate-700">
             <div className="flex min-w-0 items-center gap-2">
-              {result && !hasRun && result.totalRows > 20 && <><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-500 text-[10px] font-bold text-white">✓</span><span className="truncate font-semibold">Previewing a limited number of records. Run the report to see everything.</span></>}
+              {result && !hasRun && result.totalRows > 20 && <><span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-green-500 text-[11px] font-bold text-white">✓</span><span className="truncate font-semibold">Previewing a limited number of records. Run the report to see everything.</span></>}
             </div>
             <label className="ml-3 flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap">
               <span>Update Preview Automatically</span>
@@ -1612,7 +1612,7 @@ export default function NewReportPage() {
                 </div>
                 <div className="overflow-x-auto rounded-sm border border-slate-300">
                   <table className="w-full min-w-[900px] border-collapse text-left text-sm">
-                    <thead><tr className="border-b border-slate-300 bg-slate-50">
+                    <thead><tr className="border-b border-slate-300 bg-muted/50">
                       {rowGroups.map((field) => <th key={field} className="border-r border-slate-300 px-3 py-2 font-semibold text-primary">{fieldLabel(field)}</th>)}
                       {showDetailRows && result.columns.map((column) => <th key={column} className="border-r border-slate-300 px-3 py-2 font-semibold">{fieldLabel(column)}</th>)}
                       {!showDetailRows && showRowCounts && <th className="border-r border-slate-300 px-3 py-2 text-center font-semibold">Record Count</th>}
@@ -1640,7 +1640,7 @@ export default function NewReportPage() {
                     <table className="w-full min-w-[650px] border-collapse text-left text-sm">
                       <thead>
                         {columnGroups.length > 1 ? <>
-                          <tr className="border-b bg-slate-50">
+                          <tr className="border-b bg-muted/50">
                             <th rowSpan={2} className="whitespace-nowrap px-3 py-2 font-semibold">{rowGroups.map(fieldLabel).join(" / ") || "Group"}</th>
                             {pivotColumnHeaders.reduce<{ label: string; span: number }[]>((headers, column) => {
                               const existing = headers.find((header) => header.label === column.primary);
@@ -1650,8 +1650,8 @@ export default function NewReportPage() {
                             }, []).map((header) => <th key={header.label} colSpan={header.span} className="whitespace-nowrap border-l px-3 py-2 text-center font-semibold">{header.label}</th>)}
                             {showSubtotals && <th rowSpan={2} className="whitespace-nowrap px-3 py-2 text-center font-semibold">Total</th>}
                           </tr>
-                          <tr className="border-b bg-slate-50/80">{pivotColumnHeaders.map((column) => <th key={column.label} className="whitespace-nowrap border-l px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">{column.secondary}</th>)}</tr>
-                        </> : <tr className="border-b bg-slate-50">
+                          <tr className="border-b bg-muted/80">{pivotColumnHeaders.map((column) => <th key={column.label} className="whitespace-nowrap border-l px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">{column.secondary}</th>)}</tr>
+                        </> : <tr className="border-b bg-muted/50">
                           <th className="whitespace-nowrap px-3 py-2 font-semibold">{rowGroups.map(fieldLabel).join(" / ") || "Group"}</th>
                           {result.pivot.columns.map((column) => <th key={column} className="whitespace-nowrap px-3 py-2 text-center font-semibold">{column}</th>)}
                           {showSubtotals && <th className="whitespace-nowrap px-3 py-2 text-center font-semibold">Total</th>}
@@ -1662,9 +1662,9 @@ export default function NewReportPage() {
                           const total = result.pivot!.columns.reduce((sum, column) => sum + Number(row.values[column] || 0), 0);
                           const rowKey = `pivot-${row.group}-${rowIndex}`;
                           const collapsed = Boolean(collapsedGroups[rowKey]);
-                          return <React.Fragment key={rowKey}><tr className="border-b hover:bg-slate-50"><td className="px-3 py-2 font-medium text-primary"><button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [rowKey]: !collapsed }))} className="mr-1 text-[10px]" aria-label={`${collapsed ? "Expand" : "Collapse"} ${row.group}`}>{collapsed ? "▶" : "▼"}</button>{rowGroups.map((field) => row.groupValues?.[field] || "(Blank)").join(" / ") || row.group}{showRowCounts && <span className="ml-1 font-normal text-muted-foreground">({total})</span>}</td>{result.pivot!.columns.map((column) => <td key={column} className="px-3 py-2 text-center">{row.values[column] || 0}</td>)}{showSubtotals && <td className="px-3 py-2 text-center font-semibold">{total}</td>}</tr></React.Fragment>;
+                          return <React.Fragment key={rowKey}><tr className="border-b hover:bg-muted/50"><td className="px-3 py-2 font-medium text-primary"><button type="button" onClick={() => setCollapsedGroups((current) => ({ ...current, [rowKey]: !collapsed }))} className="mr-1 text-[11px]" aria-label={`${collapsed ? "Expand" : "Collapse"} ${row.group}`}>{collapsed ? "▶" : "▼"}</button>{rowGroups.map((field) => row.groupValues?.[field] || "(Blank)").join(" / ") || row.group}{showRowCounts && <span className="ml-1 font-normal text-muted-foreground">({total})</span>}</td>{result.pivot!.columns.map((column) => <td key={column} className="px-3 py-2 text-center">{row.values[column] || 0}</td>)}{showSubtotals && <td className="px-3 py-2 text-center font-semibold">{total}</td>}</tr></React.Fragment>;
                         })}
-                        {showGrandTotal && <tr className="bg-slate-50 font-semibold">
+                        {showGrandTotal && <tr className="bg-muted/50 font-semibold">
                           <td className="px-3 py-2">Total</td>
                           {result.pivot.columns.map((column) => <td key={column} className="px-3 py-2 text-center">{result.pivot!.rows.reduce((sum, row) => sum + Number(row.values[column] || 0), 0)}</td>)}
                           {showSubtotals && <td className="px-3 py-2 text-center">{result.pivot.rows.reduce((sum, row) => sum + Object.values(row.values).reduce((rowSum, value) => rowSum + Number(value || 0), 0), 0)}</td>}
@@ -1681,12 +1681,12 @@ export default function NewReportPage() {
                   <div className="overflow-x-auto rounded border">
                     <table className="w-full min-w-[650px] border-collapse text-left text-sm">
                       <thead>
-                        <tr className="border-b bg-slate-50">
+                        <tr className="border-b bg-muted/50">
                           {result.columns.map((column) => <th key={column} className="whitespace-nowrap px-3 py-2 font-semibold">{fieldLabel(column)}</th>)}
                         </tr>
                       </thead>
                       <tbody>
-                        {result.rows.slice(0, hasRun ? result.rows.length : 20).map((row, index) => <tr key={index} className="border-b hover:bg-slate-50">{result.columns.map((column) => <td key={column} className="whitespace-nowrap px-3 py-2">{row[column] == null ? "-" : String(row[column])}</td>)}</tr>)}
+                        {result.rows.slice(0, hasRun ? result.rows.length : 20).map((row, index) => <tr key={index} className="border-b hover:bg-muted/50">{result.columns.map((column) => <td key={column} className="whitespace-nowrap px-3 py-2">{row[column] == null ? "-" : String(row[column])}</td>)}</tr>)}
                       </tbody>
                     </table>
                   </div>
@@ -1695,7 +1695,7 @@ export default function NewReportPage() {
             ) : (
               <table className="w-full min-w-[650px] border-collapse text-left text-sm">
                 <thead>
-                  <tr className="border-b bg-slate-50">
+                  <tr className="border-b bg-muted/50">
                     {result.columns.map((column) => (
                       <th
                         key={column}
@@ -1715,7 +1715,7 @@ export default function NewReportPage() {
                           </td>
                         </tr>,
                         ...(showDetailRows ? (group.rows || []).slice(0, hasRun ? group.rows?.length : 20) : [null]).map((row, rowIndex) => (
-                          <tr key={`group-${groupIndex}-row-${rowIndex}`} className="border-b hover:bg-slate-50">
+                          <tr key={`group-${groupIndex}-row-${rowIndex}`} className="border-b hover:bg-muted/50">
                             {result.columns.map((column) => (
                               <td key={column} className="whitespace-nowrap px-3 py-2">
                                 {row?.[column] == null ? "-" : String(row[column])}
@@ -1725,7 +1725,7 @@ export default function NewReportPage() {
                         )),
                       ])
                     : result.rows.slice(0, hasRun ? result.rows.length : 20).map((row, index) => (
-                        <tr key={index} className="border-b hover:bg-slate-50">
+                        <tr key={index} className="border-b hover:bg-muted/50">
                           {result.columns.map((column) => (
                             <td key={column} className="whitespace-nowrap px-3 py-2">
                               {row[column] == null ? "-" : String(row[column])}
@@ -1738,7 +1738,7 @@ export default function NewReportPage() {
             )}
           </div>
           {result?.columnGroups && result.columnGroups.length > 0 && (
-            <div className="flex flex-wrap gap-2 border-t bg-slate-50 p-4">
+            <div className="flex flex-wrap gap-2 border-t bg-muted/50 p-4">
               <span className="w-full text-xs font-semibold uppercase tracking-wide text-muted-foreground">Group Columns</span>
               {result.columnGroups.map((group) => <Badge key={group.group} variant="outline">{group.group}: {group.count}</Badge>)}
             </div>
@@ -1760,37 +1760,37 @@ export default function NewReportPage() {
       </footer>
       {filterEditorOpen && filterDraft && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
+          <div className="w-full max-w-md rounded-lg bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b px-5 py-4">
               <h2 className="text-lg font-medium text-[#5c211d]">Filter by {fieldLabel(filterDraft.field)}</h2>
               <button type="button" onClick={() => setFilterEditorOpen(false)} aria-label="Close filter editor"><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-4 p-5">
               <label className="block text-sm font-semibold text-slate-700">Field
-                <div className="relative mt-1"><select value={filterDraft.field} onChange={(event) => setFilterDraft({ ...filterDraft, field: event.target.value, operator: fieldType(event.target.value).includes("date") ? "thisMonth" : "equals", value: "" })} className="h-11 w-full appearance-none rounded-xl border border-slate-500 bg-white px-3 pr-10 text-sm">
+                <div className="relative mt-1"><select value={filterDraft.field} onChange={(event) => setFilterDraft({ ...filterDraft, field: event.target.value, operator: fieldType(event.target.value).includes("date") ? "thisMonth" : "equals", value: "" })} className="h-9 w-full appearance-none rounded-md border border-slate-500 bg-white px-3 pr-10 text-sm">
                   {fields.map((field) => <option key={field.key} value={field.key}>{field.label}</option>)}
-                </select><button type="button" onClick={() => setFilterEditorOpen(false)} aria-label="Clear selected field" className="absolute right-2 top-1/2 -translate-y-1/2 text-[#b52d2d]"><X className="h-5 w-5" /></button></div>
+                </select><button type="button" onClick={() => setFilterEditorOpen(false)} aria-label="Clear selected field" className="absolute right-2 top-1/2 -translate-y-1/2 text-primary"><X className="h-5 w-5" /></button></div>
               </label>
               {fieldType(filterDraft.field).includes("date") ? <>
                 <label className="block text-sm font-semibold text-slate-700">Range
-                  <select value={filterDraft.operator} onChange={(event) => setFilterDraft({ ...filterDraft, operator: event.target.value, value: event.target.value === "customRange" ? { start: "", end: "" } : "" })} className="mt-1 h-11 w-full rounded-xl border border-slate-500 bg-white px-3 text-sm">
+                  <select value={filterDraft.operator} onChange={(event) => setFilterDraft({ ...filterDraft, operator: event.target.value, value: event.target.value === "customRange" ? { start: "", end: "" } : "" })} className="mt-1 h-9 w-full rounded-md border border-slate-500 bg-white px-3 text-sm">
                     {relativeDateOperators.map((operator) => <option key={operator.value} value={operator.value}>{operator.value === "customRange" ? "Custom" : operator.label}</option>)}
                   </select>
                 </label>
                 {filterDraft.operator === "customRange" ? <div className="space-y-3">
-                  <label className="block text-sm font-semibold text-slate-700">Start Date<input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.start : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: event.target.value, end: typeof filterDraft.value === "object" ? filterDraft.value.end : "" } })} className="mt-1 h-11 w-full rounded-xl border border-slate-500 px-3 text-sm" /></label>
-                  <label className="block text-sm font-semibold text-slate-700">End Date<input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.end : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: typeof filterDraft.value === "object" ? filterDraft.value.start : "", end: event.target.value } })} className="mt-1 h-11 w-full rounded-xl border border-slate-500 px-3 text-sm" /></label>
-                </div> : <div className="flex items-center gap-2 text-sm font-semibold text-slate-700"><span>{relativeDateSummary(filterDraft.operator)}</span><button type="button" onClick={() => setFilterDraft({ ...filterDraft, operator: "customRange", value: { start: "", end: "" } })} className="text-[#b52d2d]">Customize</button></div>}
+                  <label className="block text-sm font-semibold text-slate-700">Start Date<input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.start : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: event.target.value, end: typeof filterDraft.value === "object" ? filterDraft.value.end : "" } })} className="mt-1 h-9 w-full rounded-md border border-slate-500 px-3 text-sm" /></label>
+                  <label className="block text-sm font-semibold text-slate-700">End Date<input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.end : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: typeof filterDraft.value === "object" ? filterDraft.value.start : "", end: event.target.value } })} className="mt-1 h-9 w-full rounded-md border border-slate-500 px-3 text-sm" /></label>
+                </div> : <div className="flex items-center gap-2 text-sm font-semibold text-slate-700"><span>{relativeDateSummary(filterDraft.operator)}</span><button type="button" onClick={() => setFilterDraft({ ...filterDraft, operator: "customRange", value: { start: "", end: "" } })} className="text-primary">Customize</button></div>}
               </> : <label className="block text-sm font-semibold text-slate-700">Operator
-                <select value={filterDraft.operator} onChange={(event) => setFilterDraft({ ...filterDraft, operator: event.target.value, value: "" })} className="mt-1 h-11 w-full rounded-xl border border-slate-500 bg-white px-3 text-sm">
+                <select value={filterDraft.operator} onChange={(event) => setFilterDraft({ ...filterDraft, operator: event.target.value, value: "" })} className="mt-1 h-9 w-full rounded-md border border-slate-500 bg-white px-3 text-sm">
                   <optgroup label="Comparison">{getAvailableOperators(fieldType(filterDraft.field)).map((operator) => <option key={operator} value={operator}>{operatorLabels[operator] || operator}</option>)}</optgroup>
                 </select>
               </label>}
               {!['isBlank', 'isNotBlank', ...relativeDateOperators.map((item) => item.value)].includes(filterDraft.operator) && (
-                filterDraft.operator === "customRange" ? <div className="grid grid-cols-2 gap-2"><input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.start : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: event.target.value, end: typeof filterDraft.value === "object" ? filterDraft.value.end : "" } })} className="h-11 rounded-xl border border-slate-500 px-3 text-sm" /><input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.end : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: typeof filterDraft.value === "object" ? filterDraft.value.start : "", end: event.target.value } })} className="h-11 rounded-xl border border-slate-500 px-3 text-sm" /></div> : fieldType(filterDraft.field) === "enum" ? <select value={typeof filterDraft.value === "object" ? "" : filterDraft.value} onChange={(event) => setFilterDraft({ ...filterDraft, value: event.target.value })} className="h-11 w-full rounded-xl border border-slate-500 bg-white px-3 text-sm"><option value="">Select a value</option>{picklistValues.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input type={fieldType(filterDraft.field).includes("number") ? "number" : fieldType(filterDraft.field).includes("date") ? "date" : "text"} value={typeof filterDraft.value === "object" ? "" : filterDraft.value} onChange={(event) => setFilterDraft({ ...filterDraft, value: event.target.value })} placeholder="Enter a value" className="h-11 w-full rounded-xl border border-slate-500 px-3 text-sm" autoFocus />
+                filterDraft.operator === "customRange" ? <div className="grid grid-cols-2 gap-2"><input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.start : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: event.target.value, end: typeof filterDraft.value === "object" ? filterDraft.value.end : "" } })} className="h-9 rounded-md border border-slate-500 px-3 text-sm" /><input type="date" value={typeof filterDraft.value === "object" ? filterDraft.value.end : ""} onChange={(event) => setFilterDraft({ ...filterDraft, value: { start: typeof filterDraft.value === "object" ? filterDraft.value.start : "", end: event.target.value } })} className="h-9 rounded-md border border-slate-500 px-3 text-sm" /></div> : fieldType(filterDraft.field) === "enum" ? <select value={typeof filterDraft.value === "object" ? "" : filterDraft.value} onChange={(event) => setFilterDraft({ ...filterDraft, value: event.target.value })} className="h-9 w-full rounded-md border border-slate-500 bg-white px-3 text-[13px]"><option value="">Select a value</option>{picklistValues.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input type={fieldType(filterDraft.field).includes("number") ? "number" : fieldType(filterDraft.field).includes("date") ? "date" : "text"} value={typeof filterDraft.value === "object" ? "" : filterDraft.value} onChange={(event) => setFilterDraft({ ...filterDraft, value: event.target.value })} placeholder="Enter a value" className="h-9 w-full rounded-md border border-slate-500 px-3 text-[13px]" autoFocus />
               )}
-              {relativeDateOperators.some((operator) => operator.value === filterDraft.operator) && <div className="rounded border bg-slate-50 px-3 py-2 text-sm text-muted-foreground">The date range is calculated from today when the report runs.</div>}
-              <div className="flex justify-end gap-2 border-t bg-slate-50 pt-4"><Button type="button" variant="outline" onClick={() => setFilterEditorOpen(false)} className="rounded-full border-slate-600 text-[#b52d2d]">Cancel</Button><Button type="button" onClick={applyFilterDraft} className="rounded-full bg-[#d94141] px-6">Apply</Button></div>
+              {relativeDateOperators.some((operator) => operator.value === filterDraft.operator) && <div className="rounded border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">The date range is calculated from today when the report runs.</div>}
+              <div className="flex justify-end gap-2 border-t bg-muted/50 pt-4"><Button type="button" variant="outline" onClick={() => setFilterEditorOpen(false)} className="rounded-md border-border text-primary">Cancel</Button><Button type="button" onClick={applyFilterDraft} className="rounded-md bg-primary px-4">Apply</Button></div>
             </div>
           </div>
         </div>
@@ -1818,59 +1818,59 @@ export default function NewReportPage() {
       )}
       {saveOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4">
-          <div className="w-full max-w-5xl overflow-hidden rounded-[22px] border border-slate-200 bg-[#f4f4f4] shadow-[0_20px_45px_rgba(15,23,42,0.15)]">
+          <div className="w-full max-w-5xl overflow-hidden rounded-[22px] border border-slate-200 bg-background shadow-[0_20px_45px_rgba(15,23,42,0.15)]">
             <div className="flex items-center justify-center border-b border-slate-200 px-6 py-4">
-              <h2 className="text-4xl font-semibold tracking-tight text-slate-800">Save Report</h2>
+              <h2 className="text-xl font-semibold tracking-tight text-slate-800">Save Report</h2>
             </div>
 
             <div className="space-y-5 p-6">
-              <label className="block text-[1.05rem] font-semibold text-slate-800">
+              <label className="block text-[12px] font-semibold text-slate-800">
                 <span className="text-red-600">*</span> Report Name
                 <input
                   value={reportName}
                   onChange={(event) => setReportName(event.target.value)}
                   placeholder="New Notes With leads Report"
-                  className="mt-2 h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-lg text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="mt-2 h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-[13px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </label>
 
-              <label className="block text-[1.05rem] font-semibold text-slate-800">
+              <label className="block text-[12px] font-semibold text-slate-800">
                 Report Unique Name
                 <div className="relative mt-2">
                   <input
                     value={reportUniqueName}
                     onChange={(event) => setReportUniqueName(event.target.value)}
-                    className="h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-lg text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-[13px] text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                   />
-                  <span className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white">
+                  <span className="absolute right-3 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold text-white">
                     i
                   </span>
                 </div>
               </label>
 
-              <label className="block text-[1.05rem] font-semibold text-slate-800">
+              <label className="block text-[12px] font-semibold text-slate-800">
                 Report Description
                 <textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   rows={4}
-                  className="mt-2 h-20 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  className="mt-2 h-20 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </label>
 
-              <div className="block text-[1.05rem] font-semibold text-slate-800">
+              <div className="block text-[12px] font-semibold text-slate-800">
                 <span>Folder</span>
                 <div className="mt-2 flex gap-3">
                   <input
                     value={selectedFolderName}
                     readOnly
                     placeholder="Private Reports"
-                    className="h-12 flex-1 rounded-xl border border-slate-300 bg-white px-3 text-lg text-slate-800 outline-none"
+                    className="h-9 flex-1 rounded-md border border-slate-300 bg-white px-3 text-[13px] text-slate-800 outline-none"
                   />
                   <button
                     type="button"
                     onClick={openFolderPicker}
-                    className="h-12 min-w-[140px] rounded-xl border border-red-500 bg-white px-4 text-lg font-semibold text-red-600 transition hover:bg-red-50"
+                    className="h-9 min-w-[110px] rounded-md border border-red-500 bg-white px-3 text-[13px] font-medium text-red-600 transition hover:bg-red-50"
                   >
                     Select Folder
                   </button>
@@ -1878,11 +1878,11 @@ export default function NewReportPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-200 bg-[#f4f4f4] px-6 py-4">
+            <div className="flex items-center justify-between border-t border-slate-200 bg-background px-6 py-4">
               <button
                 type="button"
                 onClick={openFolderPicker}
-                className="h-12 min-w-[140px] rounded-xl border border-slate-300 bg-white px-4 text-lg font-medium text-slate-700 transition hover:bg-slate-100"
+                className="h-9 min-w-[110px] rounded-md border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 transition hover:bg-muted/50"
               >
                 New Folder
               </button>
@@ -1891,7 +1891,7 @@ export default function NewReportPage() {
                 <button
                   type="button"
                   onClick={() => setSaveOpen(false)}
-                  className="h-12 min-w-[120px] rounded-xl border border-slate-300 bg-white px-4 text-lg font-medium text-slate-700 transition hover:bg-slate-100"
+                  className="h-9 min-w-[96px] rounded-md border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 transition hover:bg-muted/50"
                 >
                   Cancel
                 </button>
@@ -1899,7 +1899,7 @@ export default function NewReportPage() {
                   type="button"
                   onClick={() => void saveReport()}
                   disabled={saving}
-                  className="h-12 min-w-[120px] rounded-xl bg-red-600 px-4 text-lg font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
+                  className="h-9 min-w-[96px] rounded-md bg-red-600 px-3 text-[13px] font-medium text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>
@@ -1910,10 +1910,10 @@ export default function NewReportPage() {
       )}
 
       {showFolderPicker && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-950/40 p-3 sm:p-6">
-          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-300 bg-[#f7f8fa] shadow-[0_24px_70px_rgba(15,23,42,0.28)] sm:max-h-[calc(100vh-3rem)]">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/40 p-3 sm:p-6">
+          <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md border border-slate-300 bg-background shadow-[0_24px_70px_rgba(15,23,42,0.28)] sm:max-h-[calc(100vh-3rem)]">
             <div className="flex shrink-0 items-center justify-center border-b border-slate-300 bg-white px-6 py-5">
-              <h2 className="text-2xl font-semibold tracking-tight text-slate-800 sm:text-3xl">Select Folder</h2>
+              <h2 className="text-xl font-semibold tracking-tight text-slate-800">Select Folder</h2>
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
@@ -1924,13 +1924,13 @@ export default function NewReportPage() {
                     value={folderPickerSearch}
                     onChange={(event) => setFolderPickerSearch(event.target.value)}
                     placeholder="Search folders..."
-                    className="w-full border-0 bg-transparent text-base text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                    className="h-9 w-full border-0 bg-transparent text-base text-slate-700 placeholder:text-slate-400 focus:outline-none"
                   />
                 </div>
               </div>
 
-              <div className="grid min-h-[420px] grid-cols-1 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm md:grid-cols-[260px_minmax(0,1fr)]">
-                <div className="border-b border-slate-300 bg-[#f1f4f8] p-2 md:border-b-0 md:border-r">
+              <div className="grid min-h-[420px] grid-cols-1 overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm md:grid-cols-[260px_minmax(0,1fr)]">
+                <div className="border-b border-border bg-muted/50 p-2 md:border-b-0 md:border-r">
                   {[
                     { key: "all", label: "All Folders" },
                     { key: "createdByMe", label: "Created by Me" },
@@ -1939,7 +1939,7 @@ export default function NewReportPage() {
                       key={tab.key}
                       type="button"
                       onClick={() => { setFolderPickerCategory(tab.key as "all" | "createdByMe"); setFolderPickerSearch(""); }}
-                      className={`flex min-h-14 w-full items-center justify-between rounded-md px-5 py-3 text-left text-base font-semibold transition sm:text-lg ${folderPickerCategory === tab.key ? "bg-white text-red-700 shadow-sm" : "text-slate-700 hover:bg-white/70"}`}
+                      className={`flex min-h-9 w-full items-center justify-between rounded-md px-3 py-2 text-left text-[13px] font-medium transition ${folderPickerCategory === tab.key ? "bg-white text-primary shadow-sm" : "text-slate-700 hover:bg-white/70"}`}
                     >
                       <span>{tab.label}</span>
                       <span className="text-slate-400">›</span>
@@ -1961,10 +1961,10 @@ export default function NewReportPage() {
                           onClick={() => {
                             setPendingFolderId(folder.id);
                           }}
-                          className={`flex min-h-20 w-full items-center justify-between gap-4 border-b border-slate-200 px-5 py-4 text-left transition hover:bg-slate-50 ${pendingFolderId === folder.id ? "bg-blue-50 ring-2 ring-inset ring-blue-500" : ""}`}
+                          className={`flex min-h-20 w-full items-center justify-between gap-4 border-b border-slate-200 px-5 py-4 text-left transition hover:bg-muted/50 ${pendingFolderId === folder.id ? "bg-blue-50 ring-2 ring-inset ring-blue-500" : ""}`}
                         >
                           <div className="flex items-center gap-3">
-                            <div className="flex h-5 w-5 items-center justify-center rounded-sm bg-slate-200 text-[10px] text-slate-600">
+                            <div className="flex h-5 w-5 items-center justify-center rounded-sm bg-slate-200 text-[11px] text-slate-600">
                               <span>▣</span>
                             </div>
                             <span className="truncate text-lg font-semibold text-red-700 sm:text-xl">{folder.name}</span>
@@ -1978,11 +1978,11 @@ export default function NewReportPage() {
               </div>
             </div>
 
-            <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-[#f4f4f4] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-background px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <button
                 type="button"
                 onClick={() => { setNewFolderName(""); setNewFolderUniqueName(""); setNewFolderDialogOpen(true); }}
-                className="h-11 rounded-xl border border-slate-300 bg-white px-5 text-base font-medium text-slate-700 transition hover:bg-slate-100 sm:min-w-[140px] sm:text-lg"
+                className="h-9 rounded-md border border-slate-300 bg-white px-5 text-base font-medium text-slate-700 transition hover:bg-muted/50 sm:min-w-[140px] sm:text-lg"
               >
                 New Folder
               </button>
@@ -1991,14 +1991,14 @@ export default function NewReportPage() {
                 <button
                   type="button"
                   onClick={() => { setPendingFolderId(selectedFolderId); setShowFolderPicker(false); }}
-                  className="h-11 min-w-[110px] rounded-xl border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 transition hover:bg-slate-100 sm:text-lg"
+                  className="h-9 min-w-[96px] rounded-md border border-slate-300 bg-white px-3 text-[13px] font-medium text-slate-700 transition hover:bg-muted/50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
                   onClick={() => { setSelectedFolderId(pendingFolderId); const folder = folders.find((item) => item.id === pendingFolderId); if (folder) setFolderSearch(folder.name); setShowFolderPicker(false); }}
-                  className="h-11 min-w-[110px] rounded-xl bg-red-600 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-red-700 sm:text-lg"
+                  className="h-9 min-w-[96px] rounded-md bg-red-600 px-3 text-[13px] font-semibold text-white shadow-sm transition hover:bg-red-700"
                 >
                   Select
                 </button>
@@ -2008,21 +2008,21 @@ export default function NewReportPage() {
         </div>
       )}
       {newFolderDialogOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 px-4 py-6 sm:px-8">
-          <div className="relative w-full max-w-[1280px] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.28)]">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4 py-6 sm:px-8">
+          <div className="relative w-full max-w-[1280px] overflow-hidden rounded-md border border-slate-200 bg-white shadow-[0_22px_60px_rgba(15,23,42,0.28)]">
             <div className="flex items-center justify-center border-b-4 border-slate-300 px-6 py-8">
-              <h2 className="text-4xl font-medium tracking-tight text-[#092b5c]">Create folder</h2>
+              <h2 className="text-xl font-semibold tracking-tight text-[#092b5c]">Create folder</h2>
             </div>
             <form onSubmit={(event) => { event.preventDefault(); void createFolderFromPicker(); }} className="space-y-9 px-8 py-9 sm:px-12">
-              <label className="block text-2xl font-medium text-slate-800"><span className="text-[#c9004b]">*</span> Folder Label
-                <input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} className="mt-3 h-[72px] w-full rounded-2xl border-2 border-slate-500 px-5 text-xl outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+              <label className="block text-base font-medium text-slate-800"><span className="text-[#c9004b]">*</span> Folder Label
+                <input autoFocus value={newFolderName} onChange={(event) => setNewFolderName(event.target.value)} className="mt-3 h-9 w-full rounded-md border px-3 text-[13px] outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
               </label>
-              <label className="block text-2xl font-medium text-slate-800"><span className="text-[#c9004b]">*</span> Folder Unique Name
-                <input value={newFolderUniqueName} onChange={(event) => setNewFolderUniqueName(event.target.value)} className="mt-3 h-[72px] w-full rounded-2xl border-2 border-slate-500 px-5 text-xl outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+              <label className="block text-base font-medium text-slate-800"><span className="text-[#c9004b]">*</span> Folder Unique Name
+                <input value={newFolderUniqueName} onChange={(event) => setNewFolderUniqueName(event.target.value)} className="mt-3 h-9 w-full rounded-md border px-3 text-[13px] outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
               </label>
               <div className="-mx-8 flex justify-end gap-4 border-t-4 border-slate-300 px-8 pb-1 pt-7 sm:-mx-12 sm:px-12">
-                <button type="button" onClick={() => setNewFolderDialogOpen(false)} className="h-16 min-w-40 rounded-full border-2 border-slate-600 bg-white px-8 text-xl font-semibold text-[#a52c2c] transition hover:bg-slate-50">Cancel</button>
-                <button type="submit" disabled={!newFolderName.trim() || !newFolderUniqueName.trim()} className="h-16 min-w-40 rounded-full bg-[#d94141] px-8 text-xl font-semibold text-white transition hover:bg-[#c83333] disabled:cursor-not-allowed disabled:opacity-50">Save</button>
+                <button type="button" onClick={() => setNewFolderDialogOpen(false)} className="h-9 min-w-24 rounded-md border border-border bg-white px-4 text-[13px] font-medium text-[#a52c2c] transition hover:bg-muted/50">Cancel</button>
+                <button type="submit" disabled={!newFolderName.trim() || !newFolderUniqueName.trim()} className="h-9 min-w-24 rounded-md bg-primary px-4 text-[13px] font-medium text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50">Save</button>
               </div>
             </form>
           </div>

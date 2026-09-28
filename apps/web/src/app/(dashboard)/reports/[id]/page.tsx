@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { crmDateToUtcStart } from "@dct-crm/shared";
 
 interface Report {
   id: string;
@@ -127,10 +128,10 @@ export default function ReportDetailsPage() {
     result?.columns.filter((column) => result.columnTypes?.[column] === "date") || [];
   const activeResultDateField = resultDateField || resultDateFields[0] || "";
   const fromTimestamp = resultFrom
-    ? new Date(resultFrom).getTime()
+    ? crmDateToUtcStart(resultFrom).getTime()
     : Number.NEGATIVE_INFINITY;
   const toTimestamp = resultTo
-    ? new Date(resultTo).getTime() + 59999
+    ? crmDateToUtcStart(resultTo).getTime() + 24 * 60 * 60 * 1000 - 1
     : Number.POSITIVE_INFINITY;
   const dateRangeError = fromTimestamp > toTimestamp;
   const matchesResultSearch = React.useCallback(
@@ -359,7 +360,7 @@ export default function ReportDetailsPage() {
 
   return (
     <div className="-m-4 flex min-h-[calc(100vh-64px)] flex-col bg-white md:-m-6">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b bg-slate-50 px-5 py-4">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b bg-muted/50 px-5 py-4">
         <div className="min-w-0 flex-1">
           <Button variant="ghost" size="sm" asChild className="mb-1 -ml-3 h-7 text-xs">
             <Link href="/reports">
@@ -381,7 +382,7 @@ export default function ReportDetailsPage() {
           >
             <Filter className="h-4 w-4" />
             {activeFilters.length > 0 && (
-              <span className="absolute -mt-6 ml-5 rounded-full bg-red-500 px-1.5 text-[10px] text-white">{activeFilters.length}</span>
+              <span className="absolute -mt-6 ml-5 rounded-full bg-red-500 px-1.5 text-[11px] text-white">{activeFilters.length}</span>
             )}
           </Button>
           <Button variant="outline" size="icon" onClick={runReport} disabled={running} aria-label="Refresh report"><RefreshCw className={`h-4 w-4 ${running ? "animate-spin" : ""}`} /></Button>
@@ -408,13 +409,13 @@ export default function ReportDetailsPage() {
           <CardContent>
             <div className="space-y-2">
               {editableFilters.map((filter, index) => <div key={`${filter.field}-${index}`} className="grid gap-2 rounded-md border bg-muted/20 p-3 sm:grid-cols-[1fr_1fr_1.5fr_auto]">
-                <select value={filter.field} onChange={(event) => setEditableFilters((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item))} className="h-9 rounded border bg-white px-2 text-sm" aria-label={`Filter ${index + 1} field`}>
+                <select value={filter.field} onChange={(event) => setEditableFilters((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, field: event.target.value } : item))} className="h-9 rounded-md border bg-white px-2 text-[13px]" aria-label={`Filter ${index + 1} field`}>
                   {filterFields.map((field) => <option key={field} value={field}>{filterFieldLabel(field)}</option>)}
                 </select>
-                <select value={filter.operator} onChange={(event) => setEditableFilters((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, operator: event.target.value } : item))} className="h-9 rounded border bg-white px-2 text-sm" aria-label={`Filter ${index + 1} operator`}>
+                <select value={filter.operator} onChange={(event) => setEditableFilters((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, operator: event.target.value } : item))} className="h-9 rounded-md border bg-white px-2 text-[13px]" aria-label={`Filter ${index + 1} operator`}>
                   {filterOperators.map((operator) => <option key={operator} value={operator}>{operator}</option>)}
                 </select>
-                {filter.operator === "isBlank" || filter.operator === "isNotBlank" ? <div className="flex items-center text-sm text-muted-foreground">No value required</div> : <input value={typeof filter.value === "object" ? "" : String(filter.value ?? "")} onChange={(event) => setEditableFilters((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} className="h-9 rounded border bg-white px-2 text-sm" placeholder="Filter value" aria-label={`Filter ${index + 1} value`} />}
+                {filter.operator === "isBlank" || filter.operator === "isNotBlank" ? <div className="flex items-center text-sm text-muted-foreground">No value required</div> : <input value={typeof filter.value === "object" ? "" : String(filter.value ?? "")} onChange={(event) => setEditableFilters((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} className="h-9 rounded-md border bg-white px-2 text-[13px]" placeholder="Filter value" aria-label={`Filter ${index + 1} value`} />}
               </div>)}
               {editableFilters.length === 0 && <p className="text-sm text-muted-foreground">This report includes all records.</p>}
             </div>
@@ -499,7 +500,7 @@ export default function ReportDetailsPage() {
       </Card>
       {result && (
         <>
-        <div className="mx-4 mt-3 border border-slate-200 bg-slate-50 px-5 py-3 text-sm text-slate-700">
+        <div className="mx-4 mt-3 border border-slate-200 bg-muted/50 px-5 py-3 text-sm text-slate-700">
           <p className="font-medium">⚠ This report has more results than can be shown. Summary information is calculated from the full report results.</p>
           <p className="mt-2 text-xs text-muted-foreground">Total Records</p>
           <p className="text-lg font-semibold text-red-700">{result.totalRows.toLocaleString()}</p>
@@ -639,11 +640,11 @@ export default function ReportDetailsPage() {
                       const collapsed = Boolean(collapsedGroups[groupKey]);
                       if (!showDetailRows) {
                         return [
-                          <tr key={`group-${groupKey}-summary`} className="border-b hover:bg-slate-50">
+                          <tr key={`group-${groupKey}-summary`} className="border-b hover:bg-muted/50">
                             {savedRowGroups.map((groupField) => <td key={groupField} className="border-r px-3 py-2 text-primary">{group.groupValues?.[groupField] || "(Blank)"}</td>)}
                             {showRowCounts && <td className="border-r px-3 py-2 text-center">{group.count}</td>}
                           </tr>,
-                          ...(showSubtotals ? [<tr key={`${groupKey}-subtotal`} className="border-b bg-slate-50 font-semibold"><td colSpan={savedRowGroups.length + (showRowCounts ? 1 : 0)} className="px-3 py-2 text-right">Subtotal: {group.count}</td></tr>] : []),
+                          ...(showSubtotals ? [<tr key={`${groupKey}-subtotal`} className="border-b bg-muted/50 font-semibold"><td colSpan={savedRowGroups.length + (showRowCounts ? 1 : 0)} className="px-3 py-2 text-right">Subtotal: {group.count}</td></tr>] : []),
                         ];
                       }
                       return [
@@ -667,7 +668,7 @@ export default function ReportDetailsPage() {
                           ))}
                         </tr>
                       )) : []),
-                      ...(!collapsed && showSubtotals ? [<tr key={`${groupKey}-subtotal`} className="border-b bg-slate-50 font-semibold"><td colSpan={savedRowGroups.length + result.columns.length} className="px-3 py-2 text-right">Subtotal: {group.count}</td></tr>] : []),
+                      ...(!collapsed && showSubtotals ? [<tr key={`${groupKey}-subtotal`} className="border-b bg-muted/50 font-semibold"><td colSpan={savedRowGroups.length + result.columns.length} className="px-3 py-2 text-right">Subtotal: {group.count}</td></tr>] : []),
                     ];
                     })}
                     {showGrandTotal && filteredGroups.length > 0 && result.summary && (

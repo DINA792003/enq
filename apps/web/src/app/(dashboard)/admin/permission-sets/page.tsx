@@ -150,7 +150,7 @@ interface PermissionByModule {
 }
 
 export default function PermissionSetsPage() {
-  const { user } = useAuth();
+  const { user, refresh: refreshAuth } = useAuth();
   const { toast } = useToast();
 
   const [permissionSets, setPermissionSets] = useState<PermissionSet[]>([]);
@@ -304,6 +304,7 @@ export default function PermissionSetsPage() {
       setViewDetails(response.data.data);
       setSelectedUserIds((response.data.data.userAssignments || []).map((assignment: UserAssignment) => assignment.userId));
       fetchPermissionSets(pagination.page, searchQuery, statusFilter);
+      await refreshAuth();
       toast({ title: "Assignments saved", description: "Permission set access was updated." });
     } catch (error: any) {
       toast({ title: "Assignment save failed", description: error?.response?.data?.error || "Try again.", variant: "destructive" as any });
@@ -457,7 +458,7 @@ export default function PermissionSetsPage() {
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
           <div className="flex items-center gap-3">
             <Shield className="h-6 w-6" />
-            <CardTitle className="text-2xl font-bold">Permission Sets</CardTitle>
+            <CardTitle className="text-xl font-bold">Permission Sets</CardTitle>
           </div>
           <Button onClick={openCreateDialog} size="sm">
             <Plus className="h-4 w-4 mr-2" />
@@ -478,7 +479,7 @@ export default function PermissionSetsPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+              className="h-9 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>

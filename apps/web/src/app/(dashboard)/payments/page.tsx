@@ -23,6 +23,7 @@ interface Payment {
   paymentNumber: string;
   leadName: string;
   bookingNumber: string;
+  bookingId?: string;
   amount: number;
   method: string;
   status: "pending" | "completed" | "failed" | "refunded";
@@ -78,11 +79,14 @@ const columns: ColumnDef<Payment>[] = [
   {
     accessorKey: "bookingNumber",
     header: "Booking",
-    cell: ({ row }) => (
-      <Link href={`/bookings/${row.original.bookingNumber}`} className="hover:underline">
-        {row.getValue("bookingNumber")}
-      </Link>
-    ),
+    cell: ({ row }) =>
+      row.original.bookingId ? (
+        <Link href={`/bookings/${row.original.bookingId}`} className="hover:underline">
+          {row.getValue("bookingNumber")}
+        </Link>
+      ) : (
+        <span>{row.getValue("bookingNumber")}</span>
+      ),
   },
   {
     accessorKey: "amount",
@@ -179,6 +183,7 @@ export default function PaymentsPage() {
               ? `${item.booking.lead.firstName} ${item.booking.lead.lastName}`.trim()
               : "—",
             bookingNumber: item.booking?.number || "—",
+            bookingId: item.booking?.id,
             amount: item.amount || 0,
             method: (item.method || "online").toLowerCase(),
             status: (item.status || "pending").toLowerCase() as Payment["status"],
@@ -228,7 +233,7 @@ export default function PaymentsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Payments</h1>
+          <h1 className="text-xl font-semibold">Payments</h1>
           <p className="text-muted-foreground">
             Track and manage all payments
           </p>
@@ -250,10 +255,11 @@ export default function PaymentsPage() {
         data={payments}
         searchKey="paymentNumber"
         searchPlaceholder="Search by payment number..."
-        totalItems={totalItems}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-      />
+          totalItems={totalItems}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          serverPagination
+        />
     </div>
   );
 }

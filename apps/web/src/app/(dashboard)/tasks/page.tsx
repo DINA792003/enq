@@ -1,15 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
+import { ColumnDef } from "@tanstack/react-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DataTable } from "@/components/crm/data-table";
 import { FilterBar, FilterField } from "@/components/crm/filters";
-import { Plus, MoreHorizontal, Eye, Edit, Trash2, Clock } from "lucide-react";
+import { Plus, MoreHorizontal, Eye, Clock } from "lucide-react";
+import { formatDateTime } from "@/lib/date-format";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { taskApi } from "@/lib/api";
 
 interface Task {
   id: string;
@@ -27,57 +28,9 @@ interface Task {
   status: "pending" | "in-progress" | "completed" | "cancelled";
   assignedTo: string;
   relatedTo?: string;
-  relatedType?: "lead" | "opportunity";
+  relatedHref?: string;
   completedAt?: string;
 }
-
-const tasks: Task[] = [
-  {
-    id: "1",
-    title: "Follow up with John Smith",
-    description: "Call to discuss premium apartment requirements",
-    dueDate: "2024-01-20T10:00:00Z",
-    priority: "high",
-    status: "pending",
-    assignedTo: "Rajesh Kumar",
-    relatedTo: "John Smith",
-    relatedType: "lead",
-  },
-  {
-    id: "2",
-    title: "Send quotation to ABC Corp",
-    description: "Prepare and send detailed quotation for Commercial Complex",
-    dueDate: "2024-01-21T14:00:00Z",
-    priority: "medium",
-    status: "in-progress",
-    assignedTo: "Priya Sharma",
-    relatedTo: "ABC Corporation",
-    relatedType: "opportunity",
-  },
-  {
-    id: "3",
-    title: "Schedule site visit",
-    description: "Arrange site visit for Raj Patel at Premium Tower",
-    dueDate: "2024-01-22T09:00:00Z",
-    priority: "low",
-    status: "pending",
-    assignedTo: "Amit Verma",
-    relatedTo: "Raj Patel",
-    relatedType: "lead",
-  },
-  {
-    id: "4",
-    title: "Update project inventory",
-    description: "Update unit availability for Premium Tower",
-    dueDate: "2024-01-19T16:00:00Z",
-    priority: "urgent",
-    status: "completed",
-    assignedTo: "Rajesh Kumar",
-    relatedTo: "Premium Tower",
-    relatedType: "opportunity",
-    completedAt: "2024-01-19T15:30:00Z",
-  },
-];
 
 const priorityColors: Record<string, string> = {
   low: "bg-gray-100 text-gray-800",
@@ -128,18 +81,15 @@ const columns: ColumnDef<Task>[] = [
     accessorKey: "dueDate",
     header: "Due Date",
     cell: ({ row }) => {
-      const date = new Date(row.getValue("dueDate"));
+      const value = row.getValue("dueDate");
+      if (!value) return "-";
+      const date = new Date(value as string);
       const isOverdue = date < new Date();
       return (
         <div className="flex items-center gap-1">
           <Clock className="h-4 w-4" />
           <span className={isOverdue ? "text-red-500" : ""}>
-            {date.toLocaleDateString("en-IN", {
-              day: "numeric",
-              month: "short",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {formatDateTime(date)}
           </span>
         </div>
       );
@@ -151,7 +101,7 @@ const columns: ColumnDef<Task>[] = [
     cell: ({ row }) => {
       const priority = row.getValue("priority") as string;
       return (
-        <Badge className={priorityColors[priority]}>
+        <Badge className={priorityColors[priority] || priorityColors.medium}>
           {priority}
         </Badge>
       );
@@ -163,7 +113,7 @@ const columns: ColumnDef<Task>[] = [
     cell: ({ row }) => {
       const status = row.getValue("status") as string;
       return (
-        <Badge className={statusColors[status]}>
+        <Badge className={statusColors[status] || statusColors.pending}>
           {status.replace("-", " ")}
         </Badge>
       );
@@ -179,11 +129,9 @@ const columns: ColumnDef<Task>[] = [
     cell: ({ row }) => {
       const task = row.original;
       if (!task.relatedTo) return "-";
+      if (!task.relatedHref) return task.relatedTo;
       return (
-        <Link
-          href={`/${task.relatedType}s/${task.id}`}
-          className="hover:underline text-primary"
-        >
+        <Link href={task.relatedHref} className="hover:underline text-primary">
           {task.relatedTo}
         </Link>
       );
@@ -207,14 +155,6 @@ const columns: ColumnDef<Task>[] = [
                 View
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       );
@@ -222,17 +162,83 @@ const columns: ColumnDef<Task>[] = [
   },
 ];
 
+function mapTask(item: any): Task {
+  const owner = item.owner
+    ? `${item.owner.firstName || ""} ${item.owner.lastName || ""}`.trim()
+    : "";
+  let relatedTo: string | undefined;
+  let relatedHref: string | undefined;
+  if (item.lead) {
+    relatedTo = `${item.lead.firstName || ""} ${item.lead.lastName || ""}`.trim() || item.lead.phone || undefined;
+    relatedHref = `/leads/${item.lead.id}`;
+  } else if (item.opportunity) {
+    relatedTo = item.opportunity.name;
+    relatedHref = `/opportunities/${item.opportunity.id}`;
+  }
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.description || "",
+    dueDate: item.dueDate || "",
+    priority: item.priority,
+    status: item.status,
+    assignedTo: owner || "-",
+    relatedTo,
+    relatedHref,
+    completedAt: item.completedAt,
+  };
+}
+
 export default function TasksPage() {
-  const router = useRouter();
   const { toast } = useToast();
   const [currentPage, setCurrentPage] = React.useState(1);
   const [filters, setFilters] = React.useState({ priority: "", status: "" });
+  const [tasks, setTasks] = React.useState<Task[]>([]);
+  const [totalItems, setTotalItems] = React.useState(0);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    const fetchTasks = async () => {
+      try {
+        setIsLoading(true);
+        const params: Record<string, any> = { page: currentPage, limit: 20 };
+        if (filters.priority) params.priority = filters.priority;
+        if (filters.status) params.status = filters.status;
+        const res = await taskApi.list(params);
+        if (!isMounted) return;
+        if (res.data.success && res.data.data) {
+          setTasks(res.data.data.map(mapTask));
+          setTotalItems(res.data.pagination?.total ?? res.data.data.length);
+        } else {
+          setTasks([]);
+          setTotalItems(0);
+        }
+      } catch {
+        if (isMounted) {
+          setTasks([]);
+          setTotalItems(0);
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    fetchTasks();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentPage, filters.priority, filters.status]);
+
+  const handleFilterChange = (key: "priority" | "status", value: string) => {
+    setFilters((f) => ({ ...f, [key]: value }));
+    setCurrentPage(1);
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Tasks</h1>
+          <h1 className="text-xl font-semibold">Tasks</h1>
           <p className="text-muted-foreground">
             Manage your tasks and stay on top of your work
           </p>
@@ -245,13 +251,16 @@ export default function TasksPage() {
 
       <div className="space-y-4">
         <FilterBar
-          onReset={() => setFilters({ priority: "", status: "" })}
+          onReset={() => {
+            setFilters({ priority: "", status: "" });
+            setCurrentPage(1);
+          }}
         >
           <FilterField
             label="Priority"
             type="select"
             value={filters.priority}
-            onChange={(value) => setFilters((f) => ({ ...f, priority: value as string }))}
+            onChange={(value) => handleFilterChange("priority", value as string)}
             options={[
               { label: "Low", value: "low" },
               { label: "Medium", value: "medium" },
@@ -264,7 +273,7 @@ export default function TasksPage() {
             label="Status"
             type="select"
             value={filters.status}
-            onChange={(value) => setFilters((f) => ({ ...f, status: value as string }))}
+            onChange={(value) => handleFilterChange("status", value as string)}
             options={[
               { label: "Pending", value: "pending" },
               { label: "In Progress", value: "in-progress" },
@@ -278,11 +287,13 @@ export default function TasksPage() {
         <DataTable
           columns={columns}
           data={tasks}
+          isLoading={isLoading}
           searchKey="title"
           searchPlaceholder="Search tasks..."
-          totalItems={tasks.length}
+          totalItems={totalItems}
           currentPage={currentPage}
           onPageChange={setCurrentPage}
+          serverPagination
         />
       </div>
     </div>

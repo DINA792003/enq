@@ -36,41 +36,21 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-function getNavigationByProfile(
+export function getNavigationByProfile(
   profileName: string | undefined,
   roles: string[],
   hasEffectivePermission: (perm: string) => boolean,
   isSuperAdmin: boolean,
   isAdmin: boolean
 ): NavItem[] {
-  const showAdminSection = isSuperAdmin || isAdmin;
   void profileName;
   void roles;
 
-  const allItems: NavItem[] = [{ title: "Home", href: "/dashboard", icon: LayoutDashboard }];
+  const nav: NavItem[] = [{ title: "Home", href: "/home", icon: LayoutDashboard }];
 
   if (isSuperAdmin) {
-    allItems.push({ title: "Companies", href: "/admin/companies", icon: Building2 });
+    nav.push({ title: "Companies", href: "/admin/companies", icon: Building2 });
   }
-
-  allItems.push(
-    { title: "Leads", href: "/leads", icon: Contact },
-    { title: "Site Visits", href: "/site-visits", icon: MapPin },
-    { title: "Opportunities", href: "/opportunities", icon: TrendingUp },
-    { title: "Quotations", href: "/quotations", icon: FileText },
-    { title: "Bookings", href: "/bookings", icon: CalendarCheck },
-    { title: "Payments", href: "/payments", icon: CreditCard },
-    { title: "Projects", href: "/projects", icon: FolderKanban },
-    { title: "Tasks", href: "/tasks", icon: CheckSquare },
-    { title: "Reports", href: "/reports", icon: BarChart3 }
-  );
-
-  if (showAdminSection) {
-    allItems.push({ title: "Setup Home", href: "/setup", icon: Settings });
-    return allItems;
-  }
-
-  const nav: NavItem[] = [{ title: "Home", href: "/dashboard", icon: LayoutDashboard }];
 
   if (hasEffectivePermission("LEAD_READ")) {
     nav.push({ title: "Leads", href: "/leads", icon: Contact });
@@ -98,6 +78,10 @@ function getNavigationByProfile(
   }
   if (hasEffectivePermission("REPORT_VIEW")) {
     nav.push({ title: "Reports", href: "/reports", icon: BarChart3 });
+  }
+
+  if (isSuperAdmin || isAdmin) {
+    nav.push({ title: "Setup Home", href: "/setup", icon: Settings });
   }
 
   return nav;
@@ -131,41 +115,41 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex h-16 items-center justify-between px-4 border-b">
-          <Link href="/dashboard" className="flex items-center gap-2">
+        <div className="flex h-14 items-center justify-between border-b px-4">
+          <Link href="/home" className="flex items-center gap-2">
             {tenant && (tenant as any).logo ? (
               <img
                 src={`/api/proxy/api/super-admin/logos/${(tenant as any).logo}`}
                 alt={tenant.name}
-                className="h-8 w-8 rounded object-cover"
+                className="h-7 w-7 rounded object-cover"
               />
             ) : (
-              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-sm">DCT</span>
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary">
+                <span className="text-xs font-bold text-primary-foreground">DCT</span>
               </div>
             )}
-            <span className="font-bold text-lg">{isSuperAdmin ? "CRM" : tenant?.name || "CRM"}</span>
+            <span className="text-sm font-semibold">{isSuperAdmin ? "CRM" : tenant?.name || "CRM"}</span>
           </Link>
           <Button variant="ghost" size="icon" onClick={onClose} className="lg:hidden">
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
-        <ScrollArea className="h-[calc(100vh-4rem)] py-4">
-          <nav className="space-y-1 px-3">
+        <ScrollArea className="h-[calc(100vh-3.5rem)] py-3">
+          <nav className="space-y-0.5 px-2">
             {navigation.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
                   isActive(item.href)
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground"
                 )}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className="h-4 w-4 shrink-0" />
                 {item.title}
-                {isActive(item.href) && <ChevronRight className="ml-auto h-4 w-4" />}
+                {isActive(item.href) && <ChevronRight className="ml-auto h-3.5 w-3.5" />}
               </Link>
             ))}
           </nav>

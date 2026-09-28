@@ -1,20 +1,28 @@
 import { prisma } from '@dct-crm/db';
 
-export async function createOwnerHistory(params: {
-  tenantId: string;
-  leadId: string;
-  previousOwnerId: string | null;
-  newOwnerId: string | null;
-  previousProfile: string | null;
-  newProfile: string | null;
-  previousStatus: string | null;
-  newStatus: string | null;
-  handoffReason: string;
-  changedById: string;
-}) {
+type DbClient = Pick<
+  typeof prisma,
+  'leadOwnerHistory'
+>;
+
+export async function createOwnerHistory(
+  params: {
+    tenantId: string;
+    leadId: string;
+    previousOwnerId: string | null;
+    newOwnerId: string | null;
+    previousProfile: string | null;
+    newProfile: string | null;
+    previousStatus: string | null;
+    newStatus: string | null;
+    handoffReason: string;
+    changedById: string;
+  },
+  db: DbClient = prisma,
+) {
   const now = new Date();
 
-  const currentHistory = await prisma.leadOwnerHistory.findFirst({
+  const currentHistory = await db.leadOwnerHistory.findFirst({
     where: {
       leadId: params.leadId,
       endDate: null,
@@ -22,13 +30,13 @@ export async function createOwnerHistory(params: {
   });
 
   if (currentHistory) {
-    await prisma.leadOwnerHistory.update({
+    await db.leadOwnerHistory.update({
       where: { id: currentHistory.id },
       data: { endDate: now },
     });
   }
 
-  const newHistory = await prisma.leadOwnerHistory.create({
+  const newHistory = await db.leadOwnerHistory.create({
     data: {
       tenantId: params.tenantId,
       leadId: params.leadId,

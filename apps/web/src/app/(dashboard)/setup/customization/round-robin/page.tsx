@@ -66,12 +66,14 @@ export default function RoundRobinPage() {
 
   const [addDialogOpen, setAddDialogOpen] = React.useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = React.useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false);
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
 
   const [selectedPool, setSelectedPool] = React.useState<string>("");
   const [eligibleUsers, setEligibleUsers] = React.useState<EligibleUser[]>([]);
   const [selectedUserId, setSelectedUserId] = React.useState<string>("");
   const [removingMember, setRemovingMember] = React.useState<Member | null>(null);
+  const [deletingConfig, setDeletingConfig] = React.useState<PoolConfig | null>(null);
   const [saving, setSaving] = React.useState(false);
 
   const [newConfig, setNewConfig] = React.useState({ poolType: "", name: "", description: "", profileName: "" });
@@ -158,15 +160,18 @@ export default function RoundRobinPage() {
     }
   };
 
-  const handleDeleteConfig = async (config: PoolConfig) => {
-    const count = (members[config.poolType] || []).filter((m) => m.isActive).length;
-    if (count > 0) {
-      toast({ title: "Cannot delete", description: `Remove all ${count} member(s) from this pool first.`, variant: "destructive" as any });
-      return;
-    }
+  const openDeleteConfigDialog = (config: PoolConfig) => {
+    setDeletingConfig(config);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfig = async () => {
+    if (!deletingConfig) return;
     try {
       setSaving(true);
-      await roundRobinApi.deleteConfig(config.id);
+      await roundRobinApi.deleteConfig(deletingConfig.id);
+      setDeleteDialogOpen(false);
+      setDeletingConfig(null);
       await loadAll();
       toast({ title: "Configuration deleted" });
     } catch (error: any) {
@@ -192,7 +197,7 @@ export default function RoundRobinPage() {
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
+            <h1 className="text-xl font-semibold flex items-center gap-2">
               <Settings className="h-6 w-6" />
               Round Robin Configuration
             </h1>
@@ -243,9 +248,9 @@ export default function RoundRobinPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDeleteConfig(config)}
+                    onClick={() => openDeleteConfigDialog(config)}
                     className="text-destructive hover:text-destructive"
-                    disabled={getMemberCount(config.poolType) > 0}
+                    disabled={saving}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -255,7 +260,7 @@ export default function RoundRobinPage() {
                 {(members[config.poolType] || []).length === 0 ? (
                   <div className="flex items-center gap-2 py-6 text-muted-foreground justify-center">
                     <AlertTriangle className="h-4 w-4" />
-                    No members configured. Add users to enable automatic lead assignment.
+                    No eligible members — new Leads will be assigned to Admin.
                   </div>
                 ) : (
                   <Table>
@@ -412,6 +417,23 @@ export default function RoundRobinPage() {
             <Button variant="outline" onClick={() => setRemoveDialogOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleRemove} disabled={saving}>
               {saving ? "Removing..." : "Remove"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Round Robin</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this Round Robin? Its members will be removed from this pool, while CRM users and historical assignments remain unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteConfig} disabled={saving}>
+              {saving ? "Deleting..." : "Delete Round Robin"}
             </Button>
           </DialogFooter>
         </DialogContent>

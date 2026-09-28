@@ -1,11 +1,18 @@
+
 "use client";
 
 import * as React from "react";
+
 import { useAuth } from "@/contexts/auth-context";
+
 import { useRouter } from "next/navigation";
+
 import { leadApi } from "@/lib/api";
+
 import { Button } from "@/components/ui/button";
+
 import { LeadList, Lead } from "@/components/crm/lead-list";
+
 import { Plus, AlertCircle } from "lucide-react";
 
 const PROFILE_STATUS_MAP: Record<string, string[]> = {
@@ -96,6 +103,7 @@ export default function LeadsPage() {
   );
 
   const canCreateLead = React.useMemo(() => hasPermission("Lead", "create"), [hasPermission]);
+  const canDeleteLead = React.useMemo(() => hasPermission("Lead", "delete"), [hasPermission]);
 
   const fetchLeads = React.useCallback(async () => {
     setIsLoading(true);
@@ -110,7 +118,6 @@ export default function LeadsPage() {
       if (sourceFilter) params.source = sourceFilter;
       if (dateFrom) params.from = dateFrom;
       if (dateTo) params.to = dateTo;
-
       const res = await leadApi.list(params);
       if (res.data.success && res.data.data) {
         const items = Array.isArray(res.data.data)
@@ -132,6 +139,19 @@ export default function LeadsPage() {
     fetchLeads();
   }, [fetchLeads]);
 
+  const handleDeleteLead = React.useCallback(async (lead: Lead) => {
+    const leadName = [lead.firstName, lead.lastName].filter(Boolean).join(" ") || lead.leadNumber || "this lead";
+    const confirmed = window.confirm(`Delete ${leadName}? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      await leadApi.delete(lead.id);
+      await fetchLeads();
+    } catch (err: any) {
+      setError(err?.response?.data?.error || "Failed to delete lead");
+    }
+  }, [fetchLeads]);
+
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
   };
@@ -140,7 +160,7 @@ export default function LeadsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Leads</h1>
+          <h1 className="text-xl font-bold">Leads</h1>
           <p className="text-muted-foreground">
             Manage your leads and track their progress
           </p>
@@ -168,7 +188,7 @@ export default function LeadsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search leads..."
-            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px]"
           />
         </div>
         <div>
@@ -179,7 +199,7 @@ export default function LeadsPage() {
               setStatusFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px]"
           >
             <option value="">All Statuses</option>
             {allowedStatuses.map((s) => (
@@ -197,7 +217,7 @@ export default function LeadsPage() {
               setSourceFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-[13px]"
           >
             <option value="">All Sources</option>
             {SOURCE_OPTIONS.map((s) => (
@@ -239,6 +259,8 @@ export default function LeadsPage() {
         totalItems={totalItems}
         currentPage={currentPage}
         onPageChange={handlePageChange}
+        canDelete={canDeleteLead}
+        onDelete={handleDeleteLead}
       />
     </div>
   );

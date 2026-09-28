@@ -1,4 +1,5 @@
 import { prisma } from '@dct-crm/db';
+import { EffectivePermissionService } from './effectivePermissions';
 import { REPORT_OBJECTS } from '../reports/report-metadata';
 
 const metadataCache = new Map<string, { data: any; expires: number }>();
@@ -195,69 +196,59 @@ export async function getFieldPermissions(tenantId: string, roleId: string, obje
   }));
 }
 
-export async function getUserObjectPermissions(tenantId: string, userId: string, objectName: string) {
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true } });
+export async function getUserObjectPermissions(tenantId: string, userId: string, objectName: string, cacheOwner?: object) {
+  const user = await prisma.user.findFirst({ where: { id: userId, tenantId }, select: { isSuperAdmin: true } });
   if (user?.isSuperAdmin) {
     return { canCreate: true, canRead: true, canUpdate: true, canDelete: true, viewAll: true, modifyAll: true };
   }
 
-  const object = await prisma.objectDefinition.findFirst({
-    where: { tenantId, name: { equals: objectName, mode: 'insensitive' } },
-  });
-  if (!object) return null;
+  const moduleName = objectName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+  const permissions = cacheOwner
+    ? await EffectivePermissionService.getEffectivePermissionsCached(cacheOwner, userId)
+    : await EffectivePermissionService.getEffectivePermissions(userId);
+  const has = (action: string) => permissions.some((permission) => permission.name === `${moduleName}_${action}`);
 
-  const userRoles = await prisma.userRole.findMany({
-    where: { userId },
-    select: { roleId: true },
-  });
-
-  if (userRoles.length === 0) return null;
-
-  const roleIds = userRoles.map(ur => ur.roleId);
-
-  const permissions = await prisma.objectPermission.findMany({
-    where: {
-      roleId: { in: roleIds },
-      objectId: object.id,
-    },
-  });
-
-  if (permissions.length === 0) return null;
+  if (!has('READ') && !has('CREATE') && !has('UPDATE') && !has('DELETE')) return null;
 
   return {
-    canCreate: permissions.some(p => p.canCreate),
-    canRead: permissions.some(p => p.canRead),
-    canUpdate: permissions.some(p => p.canUpdate),
-    canDelete: permissions.some(p => p.canDelete),
-    viewAll: permissions.some(p => p.viewAll),
-    modifyAll: permissions.some(p => p.modifyAll),
+    canCreate: has('CREATE'),
+    canRead: has('READ'),
+    canUpdate: has('UPDATE'),
+    canDelete: has('DELETE'),
+    viewAll: has('VIEW_ALL'),
+    modifyAll: has('MODIFY_ALL'),
   };
 }
 
 export async function getUserFieldPermissions(tenantId: string, userId: string, objectId: string) {
-  const userRoles = await prisma.userRole.findMany({
-    where: { userId },
-    select: { roleId: true },
+  const user = await prisma.user.findFirst({
+    where: { id: userId, tenantId },
+    select: { id: true, isSuperAdmin: true },
   });
 
-  if (userRoles.length === 0) return [];
+  if (!user) return [];
 
-  const roleIds = userRoles.map(ur => ur.roleId);
+  if (user.isSuperAdmin) {
+    const fields = await prisma.fieldDefinition.findMany({
+      where: { objectId },
+      select: { id: true, name: true },
+    });
 
-  const fields = await prisma.fieldDefinition.findMany({
-    where: { objectId },
-    include: {
-      fieldPerms: {
-        where: { roleId: { in: roleIds } },
-      },
-    },
-  });
+    return fields.map((field) => ({
+      fieldId: field.id,
+      fieldName: field.name,
+      canRead: true,
+      canEdit: true,
+    }));
+  }
 
-  return fields.map(f => ({
-    fieldId: f.id,
-    fieldName: f.name,
-    canRead: f.fieldPerms.length > 0 ? f.fieldPerms.some(fp => fp.canRead) : true,
-    canEdit: f.fieldPerms.length > 0 ? f.fieldPerms.some(fp => fp.canEdit) : true,
+  const effectivePermissions = await EffectivePermissionService.getEffectiveFieldPermissions(userId, objectId);
+
+  return effectivePermissions.map((permission) => ({
+    fieldId: permission.fieldId,
+    fieldName: permission.fieldName,
+    canRead: permission.canRead,
+    canEdit: permission.canEdit,
   }));
 }
 

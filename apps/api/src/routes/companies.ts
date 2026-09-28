@@ -20,6 +20,11 @@ import {
 const router = Router();
 
 router.use(authenticate);
+
+router.get('/logos/:filename', async (req: AuthRequest, res: Response) => {
+  serveLogo(req, res);
+});
+
 router.use(requireSuperAdmin);
 
 const upload = multer({
@@ -678,10 +683,6 @@ router.delete('/companies/:id/logo', async (req: AuthRequest, res: Response) => 
     console.error('Remove logo error:', error);
     res.status(500).json({ success: false, error: 'Failed to remove logo' });
   }
-});
-
-router.get('/logos/:filename', async (req: AuthRequest, res: Response) => {
-  serveLogo(req, res);
 });
 
 router.get('/companies/:id/capacity', async (req: AuthRequest, res: Response) => {

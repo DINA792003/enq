@@ -33,22 +33,24 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = React.useState(false);
-  const abortControllerRef = React.useRef<AbortController | null>(null);
+  const requestIdRef = React.useRef(0);
+  const debounceRef = React.useRef<number | null>(null);
 
-  const handleSearch = async (searchQuery: string) => {
-    setQuery(searchQuery);
-    if (searchQuery.length < 2) {
-      setResults([]);
-      return;
-    }
+  React.useEffect(() => {
+    return () => {
+      if (debounceRef.current !== null) {
+        window.clearTimeout(debounceRef.current);
+      }
+    };
+  }, []);
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+  const executeSearch = async (searchQuery: string) => {
+    const requestId = ++requestIdRef.current;
 
     setIsLoading(true);
     try {
       const response = await searchApi.quick(searchQuery);
+      if (requestId !== requestIdRef.current) return;
       const data = response.data?.data;
       const flattened: SearchResult[] = [];
 
@@ -86,15 +88,41 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
         });
       }
 
-      setResults(flattened);
+      if (requestId === requestIdRef.current) {
+        setResults(flattened);
+      }
     } catch (error: any) {
-      if (error?.name !== "AbortError") {
+      if (requestId === requestIdRef.current && error?.name !== "AbortError") {
         console.error("Search failed:", error);
         setResults([]);
       }
     } finally {
-      setIsLoading(false);
+      if (requestId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
+  };
+
+  const handleSearch = (searchQuery: string) => {
+    setQuery(searchQuery);
+
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+
+    if (searchQuery.length < 2) {
+      requestIdRef.current += 1;
+      setResults([]);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = null;
+      void executeSearch(searchQuery);
+    }, 300);
   };
 
   const handleSelect = (href: string) => {
@@ -142,7 +170,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
             placeholder="Search leads, opportunities, tasks..."
             value={query}
             onChange={(e) => handleSearch(e.target.value)}
-            className="pl-10 h-12"
+            className="pl-10 h-9"
             autoFocus
           />
         </div>

@@ -486,7 +486,7 @@ export default function ObjectSettingsPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{object.label} Settings</h1>
+            <h1 className="text-xl font-semibold">{object.label} Settings</h1>
             <p className="text-muted-foreground">
               Configure fields, layouts, and permissions for {object.pluralLabel}
             </p>

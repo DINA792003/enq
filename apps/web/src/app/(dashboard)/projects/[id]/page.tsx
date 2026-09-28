@@ -211,7 +211,7 @@ export default function ProjectDetailPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{project.name}</h1>
+            <h1 className="text-xl font-semibold">{project.name}</h1>
             <p className="text-muted-foreground flex items-center gap-1">
               <MapPin className="h-4 w-4" />
               {project.location}
@@ -233,7 +233,7 @@ export default function ProjectDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Units</p>
-                <p className="text-2xl font-bold">{project.totalUnits}</p>
+                <p className="text-xl font-semibold">{project.totalUnits}</p>
               </div>
             </div>
           </CardContent>
@@ -246,7 +246,7 @@ export default function ProjectDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Available</p>
-                <p className="text-2xl font-bold">{availableCount}</p>
+                <p className="text-xl font-semibold">{availableCount}</p>
               </div>
             </div>
           </CardContent>
@@ -259,7 +259,7 @@ export default function ProjectDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Booked</p>
-                <p className="text-2xl font-bold">{bookedCount}</p>
+                <p className="text-xl font-semibold">{bookedCount}</p>
               </div>
             </div>
           </CardContent>
@@ -272,7 +272,7 @@ export default function ProjectDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Sold</p>
-                <p className="text-2xl font-bold">{soldCount}</p>
+                <p className="text-xl font-semibold">{soldCount}</p>
               </div>
             </div>
           </CardContent>

@@ -25,10 +25,10 @@ import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
 import { opportunityApi } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
 
 import {
   ArrowLeft,
-  Edit,
   Trash2,
   DollarSign,
   Calendar,
@@ -71,7 +71,7 @@ const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-const stages = ["prospecting", "qualification", "proposal", "negotiation", "closed-won"];
+const stages = ["prospecting", "qualification", "needs-analysis", "proposal", "negotiation", "closed-won"];
 
 function mapOpportunity(item: any): OpportunityData {
   return {
@@ -95,6 +95,7 @@ export default function OpportunityDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
+  const { hasEffectivePermission } = useAuth();
   const [opportunity, setOpportunity] = React.useState<OpportunityData | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
 
@@ -153,19 +154,28 @@ export default function OpportunityDetailPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{opportunity.title}</h1>
+            <h1 className="text-xl font-bold">{opportunity.title}</h1>
             <p className="text-muted-foreground">{opportunity.assignedTo}</p>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => toast({ title: "Edit", description: "Edit opportunity form coming soon" })}>
-            <Edit className="mr-2 h-4 w-4" />
-            Edit
-          </Button>
-          <Button variant="destructive" onClick={() => { toast({ title: "Deleted", description: "Opportunity deleted" }); router.push("/opportunities"); }}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete
-          </Button>
+          {hasEffectivePermission("OPPORTUNITY_DELETE") && (
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                try {
+                  await opportunityApi.delete(opportunity.id);
+                  toast({ title: "Deleted", description: "Opportunity deleted" });
+                  router.push("/opportunities");
+                } catch {
+                  toast({ title: "Error", description: "Failed to delete opportunity", variant: "destructive" as any });
+                }
+              }}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 

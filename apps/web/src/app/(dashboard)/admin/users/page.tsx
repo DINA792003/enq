@@ -316,19 +316,23 @@ export default function UsersPage() {
     setPermTab("sets");
     setPermLoading(true);
     try {
-      const [psRes, dpsRes, effRes, allPermsRes] = await Promise.all([
-        newPermissionSetApi.list({ limit: 100 }),
+      const [permissionSetsResponse, directPermissionsResponse, effectiveResponse, permissionsResponse] = await Promise.all([
+        userPermissionApi.getUserPermissionSets(user.id),
         userPermissionApi.getDirectPermissions(user.id),
         effectivePermissionApi.getUserPermissions(user.id),
         permissionApi.list(),
       ]);
-      setAllPermissionSets(psRes.data.data || []);
-      setUserPermSets((dpsRes.data.data || []).map((a: any) => a.permissionSet));
-      setUserDirectPerms(dpsRes.data.data || []);
-      setEffectivePerms(effRes.data.data || null);
-      setAllPermissions(allPermsRes.data.data || []);
+
+      const permissionSetAssignments = permissionSetsResponse?.data?.data || [];
+      const directPermissions = directPermissionsResponse?.data?.data || [];
+
+      setAllPermissionSets((await newPermissionSetApi.list({ limit: 100 }))?.data?.data || []);
+      setUserPermSets(permissionSetAssignments.map((assignment: any) => assignment.permissionSet));
+      setUserDirectPerms(directPermissions);
+      setEffectivePerms(effectiveResponse?.data?.data || null);
+      setAllPermissions(permissionsResponse?.data?.data || []);
     } catch (err: any) {
-      toast({ title: "Error", description: "Failed to load permissions", variant: "destructive" as any });
+      toast({ title: "Error", description: err?.response?.data?.error || err?.message || "Failed to load permissions", variant: "destructive" as any });
     } finally {
       setPermLoading(false);
     }
@@ -344,12 +348,18 @@ export default function UsersPage() {
         await userPermissionApi.unassignPermissionSet(permTarget.id, permSetId);
         toast({ title: "Success", description: "Permission set unassigned" });
       }
-      const dpsRes = await userPermissionApi.getDirectPermissions(permTarget.id);
-      const effRes = await effectivePermissionApi.getUserPermissions(permTarget.id);
-      setUserPermSets((dpsRes.data.data || []).map((a: any) => a.permissionSet));
-      setEffectivePerms(effRes.data.data || null);
+
+      const [permissionSetsResponse, directPermissionsResponse, effectiveResponse] = await Promise.all([
+        userPermissionApi.getUserPermissionSets(permTarget.id),
+        userPermissionApi.getDirectPermissions(permTarget.id),
+        effectivePermissionApi.getUserPermissions(permTarget.id),
+      ]);
+
+      setUserPermSets((permissionSetsResponse?.data?.data || []).map((assignment: any) => assignment.permissionSet));
+      setUserDirectPerms(directPermissionsResponse?.data?.data || []);
+      setEffectivePerms(effectiveResponse?.data?.data || null);
     } catch (err: any) {
-      toast({ title: "Error", description: err?.message || "Operation failed", variant: "destructive" as any });
+      toast({ title: "Error", description: err?.response?.data?.error || err?.message || "Operation failed", variant: "destructive" as any });
     }
   };
 
@@ -409,7 +419,7 @@ export default function UsersPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Users</h1>
+            <h1 className="text-xl font-bold">Users</h1>
             <p className="text-muted-foreground">Manage system users</p>
           </div>
         </div>
@@ -427,7 +437,7 @@ export default function UsersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Users</h1>
+          <h1 className="text-xl font-bold">Users</h1>
           <p className="text-muted-foreground">Manage system users and their access</p>
         </div>
         <Button onClick={openCreateDialog}>
@@ -445,7 +455,7 @@ export default function UsersPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Users</p>
-                <p className="text-2xl font-bold">{users.length}</p>
+                <p className="text-xl font-bold">{users.length}</p>
               </div>
             </div>
           </CardContent>
@@ -458,7 +468,7 @@ export default function UsersPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active</p>
-                <p className="text-2xl font-bold">{users.filter((u) => u.status === "active").length}</p>
+                <p className="text-xl font-bold">{users.filter((u) => u.status === "active").length}</p>
               </div>
             </div>
           </CardContent>
@@ -471,7 +481,7 @@ export default function UsersPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Inactive</p>
-                <p className="text-2xl font-bold">{users.filter((u) => u.status === "inactive").length}</p>
+                <p className="text-xl font-bold">{users.filter((u) => u.status === "inactive").length}</p>
               </div>
             </div>
           </CardContent>
@@ -765,15 +775,15 @@ export default function UsersPage() {
 
       {/* Manage Permissions Dialog */}
       <Dialog open={permDialogOpen} onOpenChange={setPermDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[85vh] w-[min(90vw,48rem)] max-w-3xl flex-col overflow-hidden p-5">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Manage Permissions - {permTarget?.name}</DialogTitle>
             <DialogDescription>
               Profile: {permTarget?.profile?.name || "None"} | Assign permission sets and direct permissions
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex gap-2 border-b pb-2">
+          <div className="flex shrink-0 gap-2 border-b pb-2">
             <Button variant={permTab === "sets" ? "default" : "ghost"} size="sm" onClick={() => setPermTab("sets")}>
               Permission Sets
             </Button>
@@ -786,11 +796,11 @@ export default function UsersPage() {
           </div>
 
           {permLoading ? (
-            <div className="flex-1 flex items-center justify-center py-8">
+            <div className="flex flex-1 items-center justify-center py-8">
               <p className="text-muted-foreground">Loading...</p>
             </div>
           ) : permTab === "sets" ? (
-            <ScrollArea className="flex-1 max-h-[60vh]">
+            <div className="h-[420px] overflow-y-auto pr-2">
               <div className="space-y-3 py-2">
                 {allPermissionSets.map((ps) => {
                   const isAssigned = userPermSets.some((ups) => ups.id === ps.id);
@@ -814,16 +824,16 @@ export default function UsersPage() {
                   <p className="text-center text-muted-foreground py-4">No permission sets available</p>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           ) : permTab === "direct" ? (
-            <ScrollArea className="flex-1 max-h-[60vh]">
+            <div className="h-[420px] overflow-y-auto pr-2">
               <div className="space-y-4 py-2">
                 <div>
                   <p className="text-sm font-medium mb-2">Currently Assigned ({userDirectPerms.length})</p>
                   {userDirectPerms.length > 0 ? (
                     <div className="space-y-1">
                       {userDirectPerms.map((dp: any) => (
-                        <div key={dp.id} className="flex items-center justify-between p-2 rounded border text-sm">
+                        <div key={dp.id} className="flex items-center justify-between p-2 rounded-md border text-sm">
                           <div>
                             <Badge variant="outline" className="mr-2">{dp.permission.module}</Badge>
                             {dp.permission.label}
@@ -870,28 +880,28 @@ export default function UsersPage() {
                   </div>
                 </div>
               </div>
-            </ScrollArea>
+            </div>
           ) : (
-            <ScrollArea className="flex-1 max-h-[60vh]">
+            <div className="h-[420px] overflow-y-auto pr-2">
               <div className="space-y-4 py-2">
                 {effectivePerms && (
                   <>
                     <div className="grid grid-cols-3 gap-3 mb-4">
-                      <div className="p-3 rounded border text-center">
-                        <p className="text-2xl font-bold">{effectivePerms.total}</p>
+                      <div className="p-3 rounded-md border text-center">
+                        <p className="text-xl font-bold">{effectivePerms.total}</p>
                         <p className="text-xs text-muted-foreground">Total Permissions</p>
                       </div>
-                      <div className="p-3 rounded border text-center">
-                        <p className="text-2xl font-bold">{effectivePerms.sources?.profile?.length || 0}</p>
+                      <div className="p-3 rounded-md border text-center">
+                        <p className="text-xl font-bold">{effectivePerms.sources?.profile?.length || 0}</p>
                         <p className="text-xs text-muted-foreground">From Profile</p>
                       </div>
-                      <div className="p-3 rounded border text-center">
-                        <p className="text-2xl font-bold">{effectivePerms.sources?.permissionSets?.length || 0}</p>
+                      <div className="p-3 rounded-md border text-center">
+                        <p className="text-xl font-bold">{effectivePerms.sources?.permissionSets?.length || 0}</p>
                         <p className="text-xs text-muted-foreground">From Perm Sets</p>
                       </div>
                     </div>
                     {effectivePerms.hasFullAccess && (
-                      <div className="p-3 rounded bg-green-50 border border-green-200 text-green-800 text-sm font-medium">
+                      <div className="p-3 rounded-md bg-green-50 border border-green-200 text-green-800 text-sm font-medium">
                         Full System Access
                       </div>
                     )}
@@ -911,7 +921,7 @@ export default function UsersPage() {
                   </>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           )}
 
           <DialogFooter>

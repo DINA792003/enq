@@ -2,6 +2,12 @@ import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
+import {
+  applyScope,
+  getLeadRecordScope,
+  getScopeClause,
+  leadScopeClause,
+} from '../services/recordAccess';
 
 const router = Router();
 
@@ -24,8 +30,9 @@ router.get('/leads', authorize('Lead', 'read'), async (req: AuthRequest, res: Re
 
     const dateFilter = parseDateFilter(startDate as string, endDate as string);
 
-    const where: any = { tenantId: req.tenantId! };
+    let where: any = { tenantId: req.tenantId! };
     if (startDate || endDate) where.createdAt = dateFilter;
+    where = applyScope(where, leadScopeClause(await getLeadRecordScope(req.user!)));
 
     const [total, byStatus, bySource, byOwner, recentTrend] = await Promise.all([
       prisma.lead.count({ where }),
@@ -86,8 +93,9 @@ router.get('/opportunities', authorize('Opportunity', 'read'), async (req: AuthR
 
     const dateFilter = parseDateFilter(startDate as string, endDate as string);
 
-    const where: any = { tenantId: req.tenantId! };
+    let where: any = { tenantId: req.tenantId! };
     if (startDate || endDate) where.createdAt = dateFilter;
+    where = applyScope(where, await getScopeClause(req.user!, 'opportunity'));
 
     const [total, byStage, totalAmount, avgAmount, wonAmount, lostCount, byOwner] = await Promise.all([
       prisma.opportunity.count({ where }),
@@ -165,8 +173,9 @@ router.get('/bookings', authorize('Booking', 'read'), async (req: AuthRequest, r
 
     const dateFilter = parseDateFilter(startDate as string, endDate as string);
 
-    const where: any = { tenantId: req.tenantId! };
+    let where: any = { tenantId: req.tenantId! };
     if (startDate || endDate) where.createdAt = dateFilter;
+    where = applyScope(where, await getScopeClause(req.user!, 'booking'));
 
     const [total, byStatus, totalAmount, byProject, recentBookings] = await Promise.all([
       prisma.booking.count({ where }),
@@ -298,41 +307,69 @@ router.get('/payments', authorize('Payment', 'read'), async (req: AuthRequest, r
 
 router.get('/projects', authorize('Project', 'read'), async (req: AuthRequest, res: Response) => {
   try {
-    const projects = await prisma.project.findMany({
-      where: { tenantId: req.tenantId! },
-      include: {
-        _count: {
-          select: { units: true, leads: true, bookings: true, opportunities: true },
+    const tenantId = req.tenantId!;
+
+    const [bookingScope, leadScope] = await Promise.all([
+      getScopeClause(req.user!, 'booking'),
+      getLeadRecordScope(req.user!),
+    ]);
+
+    const [projects, unitStats, bookingStats, leadStats] = await Promise.all([
+      prisma.project.findMany({
+        where: { tenantId },
+        include: {
+          _count: {
+            select: { units: true, leads: true, bookings: true, opportunities: true },
+          },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.unit.groupBy({
+        by: ['projectId', 'status'],
+        where: { tenantId },
+        _count: { id: true },
+      }),
+      prisma.booking.groupBy({
+        by: ['projectId'],
+        where: applyScope(
+          { tenantId, status: { in: ['CONFIRMED', 'COMPLETED'] } },
+          bookingScope,
+        ),
+        _sum: { totalAmount: true },
+      }),
+      prisma.lead.groupBy({
+        by: ['projectId'],
+        where: applyScope({ tenantId }, leadScopeClause(leadScope)),
+        _count: { id: true },
+      }),
+    ]);
 
-    const projectStats = await Promise.all(
-      projects.map(async (project) => {
-        const [unitStats, bookingRevenue, leadCount] = await Promise.all([
-          prisma.unit.groupBy({
-            by: ['status'],
-            where: { projectId: project.id, tenantId: req.tenantId! },
-            _count: { id: true },
-          }),
-          prisma.booking.aggregate({
-            where: { projectId: project.id, tenantId: req.tenantId!, status: { in: ['CONFIRMED', 'COMPLETED'] } },
-            _sum: { totalAmount: true },
-          }),
-          prisma.lead.count({
-            where: { projectId: project.id, tenantId: req.tenantId! },
-          }),
-        ]);
+    const unitsByProject = new Map<string, Array<{ status: string; count: number }>>();
+    for (const row of unitStats) {
+      if (!row.projectId) continue;
+      const list = unitsByProject.get(row.projectId) || [];
+      list.push({ status: row.status, count: row._count.id });
+      unitsByProject.set(row.projectId, list);
+    }
 
-        return {
-          ...project,
-          unitStats: unitStats.map((u) => ({ status: u.status, count: u._count.id })),
-          revenue: bookingRevenue._sum.totalAmount || 0,
-          leadCount,
-        };
-      })
-    );
+    const revenueByProject = new Map<string, number>();
+    for (const row of bookingStats) {
+      if (!row.projectId) continue;
+      revenueByProject.set(row.projectId, row._sum.totalAmount || 0);
+    }
+
+    const leadsByProject = new Map<string, number>();
+    for (const row of leadStats) {
+      if (!row.projectId) continue;
+      leadsByProject.set(row.projectId, row._count.id);
+    }
+
+    const projectStats = projects.map((project) => ({
+      ...project,
+      unitStats: unitsByProject.get(project.id) || [],
+      revenue: revenueByProject.get(project.id) || 0,
+      leadCount: leadsByProject.get(project.id) || 0,
+    }));
 
     res.json({ success: true, data: projectStats });
   } catch (error) {
@@ -344,26 +381,25 @@ router.get('/projects', authorize('Project', 'read'), async (req: AuthRequest, r
 router.get('/pipeline', authorize('Opportunity', 'read'), async (req: AuthRequest, res: Response) => {
   try {
     const stages = ['PROSPECTING', 'QUALIFICATION', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST'];
+    const scopeClause = await getScopeClause(req.user!, 'opportunity');
+    const baseWhere = applyScope({ tenantId: req.tenantId! }, scopeClause);
 
-    const pipelineData = await Promise.all(
-      stages.map(async (stage) => {
-        const [count, amount] = await Promise.all([
-          prisma.opportunity.count({
-            where: { tenantId: req.tenantId!, stage: stage as any },
-          }),
-          prisma.opportunity.aggregate({
-            where: { tenantId: req.tenantId!, stage: stage as any },
-            _sum: { amount: true },
-          }),
-        ]);
+    const grouped = await prisma.opportunity.groupBy({
+      by: ['stage'],
+      where: baseWhere,
+      _count: { id: true },
+      _sum: { amount: true },
+    });
+    const byStage = new Map(grouped.map((row) => [row.stage, row]));
 
-        return {
-          stage,
-          count,
-          amount: amount._sum.amount || 0,
-        };
-      })
-    );
+    const pipelineData = stages.map((stage) => {
+      const row = byStage.get(stage as any);
+      return {
+        stage,
+        count: row?._count.id ?? 0,
+        amount: row?._sum.amount || 0,
+      };
+    });
 
     const totalPipeline = pipelineData
       .filter((p) => !['CLOSED_WON', 'CLOSED_LOST'].includes(p.stage))
@@ -371,7 +407,7 @@ router.get('/pipeline', authorize('Opportunity', 'read'), async (req: AuthReques
 
     const opportunitiesWithProb = await prisma.opportunity.findMany({
       where: {
-        tenantId: req.tenantId!,
+        ...baseWhere,
         stage: { notIn: ['CLOSED_WON', 'CLOSED_LOST'] },
         probability: { not: null },
         amount: { not: null },

@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+﻿import axios, { AxiosInstance, AxiosError } from 'axios';
 
 const API_BASE_URL = '/api/proxy';
 
@@ -64,16 +64,18 @@ export const leadApi = {
     api.put<ApiResponse>(`/api/leads/${id}/status`, { status, note }),
   recovery: (id: string, data: { recoveryReason: string; note?: string }) =>
     api.post<ApiResponse>(`/api/leads/${id}/move-to-recovery`, data),
-  assign: (id: string, ownerId: string) =>
-    api.put<ApiResponse>(`/api/leads/${id}/assign`, { ownerId }),
+  changeOwner: (id: string, ownerId: string, reason: string) =>
+    api.patch<ApiResponse>(`/api/leads/${id}/owner`, { ownerId, reason }),
+  ownerCandidates: (id: string) =>
+    api.get<ApiResponse>(`/api/leads/${id}/owner-candidates`),
   pushToSVC: (id: string, data: { reason: string }) =>
     api.post<ApiResponse>(`/api/leads/${id}/push-to-svc`, data),
   moveToRecovery: (id: string, data: { recoveryReason: string; note?: string }) =>
     api.post<ApiResponse>(`/api/leads/${id}/move-to-recovery`, data),
   scheduleSiteVisit: (id: string, data: { scheduledAt: string; notes: string; projectId?: string }) =>
     api.post<ApiResponse>(`/api/leads/${id}/schedule-site-visit`, data),
-  getOwnerHistory: (id: string) =>
-    api.get<ApiResponse>(`/api/leads/${id}/owner-history`),
+  convert: (id: string, data?: { projectId?: string; unitId?: string; name?: string; amount?: number; expectedCloseDate?: string; probability?: number; description?: string }) =>
+    api.post<ApiResponse>(`/api/leads/${id}/convert`, data || {}),
   getAuditHistory: (id: string, params?: Record<string, any>) =>
     api.get<ApiResponse>(`/api/leads/${id}/audit-history`, { params }),
 };
@@ -90,8 +92,12 @@ export const siteVisitApi = {
     api.put<ApiResponse>(`/api/site-visits/${id}`, data),
   delete: (id: string) =>
     api.delete<ApiResponse>(`/api/site-visits/${id}`),
-  updateStatus: (id: string, status: string) =>
-    api.put<ApiResponse>(`/api/site-visits/${id}/status`, { status }),
+  complete: (id: string, data: { completedAt: string; customerFeedback: string; completionNotes: string }) =>
+    api.patch<ApiResponse>(`/api/site-visits/${id}/complete`, data || {}),
+  cancel: (id: string, reason: string) =>
+    api.patch<ApiResponse>(`/api/site-visits/${id}/cancel`, { reason }),
+  revisit: (id: string, data: { reason: string; scheduledAt: string; projectId: string; assigneeId?: string; notes?: string }) =>
+    api.post<ApiResponse>(`/api/site-visits/${id}/revisit`, data),
 };
 
 // Opportunity API
@@ -107,7 +113,7 @@ export const opportunityApi = {
   delete: (id: string) =>
     api.delete<ApiResponse>(`/api/opportunities/${id}`),
   updateStage: (id: string, stage: string) =>
-    api.put<ApiResponse>(`/api/opportunities/${id}/stage`, { stage }),
+    api.patch<ApiResponse>(`/api/opportunities/${id}/stage`, { stage }),
 };
 
 // Quotation API
@@ -123,11 +129,11 @@ export const quotationApi = {
   delete: (id: string) =>
     api.delete<ApiResponse>(`/api/quotations/${id}`),
   submit: (id: string) =>
-    api.put<ApiResponse>(`/api/quotations/${id}/submit`),
+    api.patch<ApiResponse>(`/api/quotations/${id}/submit`),
   approve: (id: string, comments?: string) =>
-    api.put<ApiResponse>(`/api/quotations/${id}/approve`, { comments }),
+    api.patch<ApiResponse>(`/api/quotations/${id}/approve`, { comments }),
   reject: (id: string, comments?: string) =>
-    api.put<ApiResponse>(`/api/quotations/${id}/reject`, { comments }),
+    api.patch<ApiResponse>(`/api/quotations/${id}/reject`, { comments }),
 };
 
 // Booking API
@@ -143,9 +149,9 @@ export const bookingApi = {
   delete: (id: string) =>
     api.delete<ApiResponse>(`/api/bookings/${id}`),
   confirm: (id: string) =>
-    api.put<ApiResponse>(`/api/bookings/${id}/confirm`),
-  cancel: (id: string, reason?: string) =>
-    api.put<ApiResponse>(`/api/bookings/${id}/cancel`, { reason }),
+    api.patch<ApiResponse>(`/api/bookings/${id}/confirm`),
+  cancel: (id: string, notes?: string) =>
+    api.patch<ApiResponse>(`/api/bookings/${id}/cancel`, { notes }),
 };
 
 // Payment API
@@ -421,8 +427,8 @@ export const auditApi = {
     api.get<ApiResponse>('/api/audit', { params }),
   get: (id: string) =>
     api.get<ApiResponse>(`/api/audit/${id}`),
-  getByObject: (type: string, objectId: string, params?: Record<string, any>) =>
-    api.get<ApiResponse>(`/api/audit/object/${type}/${objectId}`, { params }),
+  getByObject: (type: string, objectId: string) =>
+    api.get<ApiResponse>(`/api/audit/object/${type}/${objectId}`),
   getByUser: (userId: string) =>
     api.get<ApiResponse>(`/api/audit/user/${userId}`),
   getSummary: (params?: Record<string, any>) =>
@@ -494,6 +500,7 @@ export const objectManagerApi = {
     api.post<ApiResponse>(`/api/field-permissions/${objectName}/bulk`, { permissions }),
   deleteFieldPermission: (objectName: string, permissionId: string) =>
     api.delete<ApiResponse>(`/api/field-permissions/${objectName}/${permissionId}`),
+
 };
 
 // Modules API
@@ -691,11 +698,27 @@ export const companyApi = {
 
 export const roundRobinApi = {
   getAll: () => api.get<ApiResponse>('/api/round-robin'),
-  getPool: (poolType: string) => api.get<ApiResponse>(`/api/round-robin/${poolType}`),
   addMember: (userId: string, poolType: string) => api.post<ApiResponse>('/api/round-robin', { userId, poolType }),
   removeMember: (id: string) => api.delete<ApiResponse>(`/api/round-robin/${id}`),
   getEligible: (poolType: string) => api.get<ApiResponse>(`/api/round-robin/eligible/${poolType}`),
   getConfigs: () => api.get<ApiResponse>('/api/round-robin/configs'),
   createConfig: (data: { poolType: string; name: string; description?: string; profileName: string }) => api.post<ApiResponse>('/api/round-robin/configs', data),
-  deleteConfig: (id: string) => api.delete<ApiResponse>(`/api/round-robin/configs/${id}`),
+  deleteConfig: (id: string) =>
+    api.delete<ApiResponse>(`/api/round-robin/configs/${id}`),
+};
+
+// Customize Home (Homepage layouts per profile)
+export const homepageApi = {
+  list: () =>
+    api.get<ApiResponse>('/api/homepages'),
+  assigned: () =>
+    api.get<ApiResponse>('/api/homepages/assigned'),
+  get: (id: string) =>
+    api.get<ApiResponse>(`/api/homepages/${id}`),
+  create: (data: { name: string; description?: string; layout: Array<string | { id: string; x: number; y: number; width: number; height: number }>; profileIds: string[] }) =>
+    api.post<ApiResponse>('/api/homepages', data),
+  update: (id: string, data: { name: string; description?: string; layout: Array<string | { id: string; x: number; y: number; width: number; height: number }>; profileIds: string[] }) =>
+    api.put<ApiResponse>(`/api/homepages/${id}`, data),
+  updateStatus: (id: string, isActive: boolean) =>
+    api.patch<ApiResponse>(`/api/homepages/${id}/status`, { isActive }),
 };

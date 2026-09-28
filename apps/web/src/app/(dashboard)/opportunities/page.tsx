@@ -1,24 +1,40 @@
 "use client";
 
 import * as React from "react";
+
 import { useRouter } from "next/navigation";
+
 import { Button } from "@/components/ui/button";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { OpportunityPipeline, Opportunity } from "@/components/crm/opportunity-pipeline";
+
 import { DataTable } from "@/components/crm/data-table";
+
 import { ColumnDef } from "@tanstack/react-table";
+
 import Link from "next/link";
+
 import { Badge } from "@/components/ui/badge";
+
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, LayoutGrid, List, MoreHorizontal, Eye, Edit, Trash2 } from "lucide-react";
+
+import { Plus, LayoutGrid, List, MoreHorizontal, Eye } from "lucide-react";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
 import { useToast } from "@/hooks/use-toast";
+
 import { opportunityApi } from "@/lib/api";
+
+import { useAuth } from "@/contexts/auth-context";
+
 import { formatDate } from "@/lib/date-format";
 
 const stageColors: Record<string, string> = {
@@ -97,14 +113,6 @@ const listColumns: ColumnDef<Opportunity>[] = [
                 View
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       );
@@ -115,6 +123,7 @@ const listColumns: ColumnDef<Opportunity>[] = [
 export default function OpportunitiesPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { hasEffectivePermission } = useAuth();
   const [view, setView] = React.useState<"pipeline" | "list">("pipeline");
   const [currentPage, setCurrentPage] = React.useState(1);
   const [opportunities, setOpportunities] = React.useState<Opportunity[]>([]);
@@ -178,7 +187,7 @@ export default function OpportunitiesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Opportunities</h1>
+          <h1 className="text-xl font-bold">Opportunities</h1>
           <p className="text-muted-foreground">
             Track and manage sales opportunities
           </p>
@@ -196,25 +205,39 @@ export default function OpportunitiesPage() {
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button onClick={() => router.push("/opportunities/new")}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Opportunity
-          </Button>
+          {hasEffectivePermission("OPPORTUNITY_CREATE") && (
+            <Button onClick={() => router.push("/opportunities/new")}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Opportunity
+            </Button>
+          )}
         </div>
       </div>
 
       {view === "pipeline" ? (
-        <OpportunityPipeline opportunities={opportunities} />
+        <OpportunityPipeline
+          opportunities={opportunities}
+          onStageChange={async (opportunityId, newStage) => {
+            if (!hasEffectivePermission("OPPORTUNITY_UPDATE")) return;
+            try {
+              await opportunityApi.updateStage(opportunityId, newStage.toUpperCase().replace(/-/g, "_"));
+              setOpportunities((current) => current.map((item) => item.id === opportunityId ? { ...item, stage: newStage } : item));
+            } catch {
+              toast({ title: "Error", description: "Failed to update opportunity stage", variant: "destructive" as any });
+            }
+          }}
+        />
       ) : (
         <DataTable
           columns={listColumns}
           data={opportunities}
           searchKey="title"
           searchPlaceholder="Search opportunities..."
-          totalItems={totalItems}
-          currentPage={currentPage}
-          onPageChange={setCurrentPage}
-        />
+            totalItems={totalItems}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+            serverPagination
+          />
       )}
     </div>
   );

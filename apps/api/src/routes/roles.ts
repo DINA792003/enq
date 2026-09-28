@@ -125,6 +125,12 @@ router.post('/', authorize('Role', 'create'), async (req: AuthRequest, res: Resp
 
     }
 
+    if (data.permissionSetIds?.length) {
+      const permissionSetIds = [...new Set(data.permissionSetIds)];
+      const permissionSetCount = await prisma.permissionSet.count({ where: { id: { in: permissionSetIds }, tenantId: req.tenantId! } });
+      if (permissionSetCount !== permissionSetIds.length) return res.status(400).json({ success: false, error: 'One or more permission sets were not found in this tenant' });
+    }
+
     const role = await prisma.role.create({
       data: {
         tenantId: req.tenantId!,
@@ -217,6 +223,12 @@ router.put('/:id', authorize('Role', 'edit'), async (req: AuthRequest, res: Resp
       if (descendants.has(data.parentRoleId)) {
         return res.status(400).json({ success: false, error: 'A role cannot be placed under one of its descendants' });
       }
+    }
+
+    if (data.permissionSetIds?.length) {
+      const permissionSetIds = [...new Set(data.permissionSetIds)];
+      const permissionSetCount = await prisma.permissionSet.count({ where: { id: { in: permissionSetIds }, tenantId: req.tenantId! } });
+      if (permissionSetCount !== permissionSetIds.length) return res.status(400).json({ success: false, error: 'One or more permission sets were not found in this tenant' });
     }
 
     const updateData: any = { ...data };

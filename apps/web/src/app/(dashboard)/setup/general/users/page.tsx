@@ -85,6 +85,10 @@ import {
 } from "@/hooks/use-toast";
 
 import {
+  useAuth,
+} from "@/contexts/auth-context";
+
+import {
   Plus,
   Pencil,
   Search,
@@ -341,6 +345,7 @@ function normalizeUser(user: any): User {
 
 export default function UsersPage() {
   const { toast } = useToast();
+  const { refresh: refreshAuth } = useAuth();
 
   /* -------------------------------------------------------
      USERS
@@ -867,7 +872,7 @@ export default function UsersPage() {
   const handleLoginAsUser = async (user: User) => {
     try {
       await userApi.impersonate(user.id);
-      window.location.href = "/dashboard";
+      window.location.href = "/home";
     } catch (err: any) {
       toast({ title: "Unable to log in as user", description: err?.response?.data?.error || err?.message || "Only administrators can use this action.", variant: "destructive" as any });
     }
@@ -984,6 +989,8 @@ export default function UsersPage() {
           directResponse,
           effectiveResponse,
           permissionsResponse,
+          allGroupsResponse,
+          userGroupsResponse,
         ] =
           await Promise.all([
             userPermissionApi.getUserPermissionSets(
@@ -1001,7 +1008,23 @@ export default function UsersPage() {
             permissionApi.list({
               limit: 500,
             }),
+
+            permissionSetGroupApi.list(),
+
+            userPermissionSetGroupApi.list(
+              userId
+            ),
           ]);
+
+        setAllPermissionGroups(
+          getResponseData(allGroupsResponse)
+        );
+
+        setUserPermissionGroups(
+          getResponseData(userGroupsResponse)
+            .map((row: any) => row?.group)
+            .filter(Boolean)
+        );
 
         setUserPermSets(
           getResponseData(
@@ -1153,6 +1176,7 @@ export default function UsersPage() {
         }
 
         await refreshPermissions();
+        await refreshAuth();
       } catch (err: any) {
         toast({
           title: "Error",
@@ -1208,6 +1232,7 @@ export default function UsersPage() {
         }
 
         await refreshPermissions();
+        await refreshAuth();
       } catch (err: any) {
         toast({
           title: "Error",
@@ -1249,6 +1274,7 @@ export default function UsersPage() {
         }
 
         await refreshPermissions();
+        await refreshAuth();
 
         toast({
           title: assigned
@@ -1315,7 +1341,7 @@ export default function UsersPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-xl font-bold">
             Users
           </h1>
 
@@ -1347,7 +1373,7 @@ export default function UsersPage() {
   ======================================================= */
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
 
       {/* HEADER */}
 
@@ -3051,7 +3077,7 @@ export default function UsersPage() {
                         <Card>
                           <CardContent className="p-4 text-center">
 
-                            <p className="text-2xl font-bold">
+                            <p className="text-xl font-bold">
                               {
                                 effectivePerms.total ??
                                 0
@@ -3068,7 +3094,7 @@ export default function UsersPage() {
                         <Card>
                           <CardContent className="p-4 text-center">
 
-                            <p className="text-2xl font-bold">
+                            <p className="text-xl font-bold">
                               {
                                 effectivePerms
                                   .sources
@@ -3088,7 +3114,7 @@ export default function UsersPage() {
                         <Card>
                           <CardContent className="p-4 text-center">
 
-                            <p className="text-2xl font-bold">
+                            <p className="text-xl font-bold">
                               {
                                 effectivePerms
                                   .sources

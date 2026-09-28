@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 import { invalidateCache } from '../services/metadata';
 
 const router = Router();
@@ -30,7 +31,7 @@ router.get('/:fieldId', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/:fieldId', async (req: AuthRequest, res: Response) => {
+router.post('/:fieldId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const field = await prisma.fieldDefinition.findFirst({
       where: { id: req.params.fieldId },
@@ -89,7 +90,7 @@ router.post('/:fieldId', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.put('/:fieldId/:valueId', async (req: AuthRequest, res: Response) => {
+router.put('/:fieldId/:valueId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const field = await prisma.fieldDefinition.findFirst({
       where: { id: req.params.fieldId },
@@ -134,7 +135,7 @@ router.put('/:fieldId/:valueId', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.delete('/:fieldId/:valueId', async (req: AuthRequest, res: Response) => {
+router.delete('/:fieldId/:valueId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const field = await prisma.fieldDefinition.findFirst({
       where: { id: req.params.fieldId },

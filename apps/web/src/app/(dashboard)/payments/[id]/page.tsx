@@ -167,7 +167,7 @@ export default function PaymentDetailPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{payment.paymentNumber}</h1>
+            <h1 className="text-xl font-semibold">{payment.paymentNumber}</h1>
             <p className="text-muted-foreground">Payment for {payment.leadName}</p>
           </div>
         </div>
@@ -238,11 +238,7 @@ export default function PaymentDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Payment Date</p>
                 <p className="text-sm font-medium">
-                  {new Date(payment.paymentDate).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  {formatDate(payment.paymentDate)}
                 </p>
               </div>
             </div>

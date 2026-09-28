@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable } from "@/components/crm/data-table";
 import { FilterBar, FilterField } from "@/components/crm/filters";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, MoreHorizontal, Eye, Edit, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -16,66 +17,68 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { siteVisitApi } from "@/lib/api";
+import { formatDateTime } from "@/lib/date-format";
+import { Input } from "@/components/ui/input";
+import { Search } from "lucide-react";
 
 interface SiteVisit {
   id: string;
+  siteVisitNumber?: string;
+  leadId: string;
   leadName: string;
   projectName: string;
   visitDate: string;
-  status: "scheduled" | "completed" | "cancelled" | "rescheduled";
+  status: "SCHEDULED" | "COMPLETED" | "CANCELLED";
   assignedTo: string;
+  leadNumber?: string;
+  createdAt: string;
+  createdBy: string;
   feedback?: string;
 }
 
-const siteVisits: SiteVisit[] = [
-  {
-    id: "1",
-    leadName: "John Smith",
-    projectName: "Premium Tower",
-    visitDate: "2024-01-20T10:00:00Z",
-    status: "scheduled",
-    assignedTo: "Rajesh Kumar",
-  },
-  {
-    id: "2",
-    leadName: "Sarah Johnson",
-    projectName: "Commercial Complex",
-    visitDate: "2024-01-19T14:00:00Z",
-    status: "completed",
-    assignedTo: "Priya Sharma",
-    feedback: "Client liked the project, will follow up next week",
-  },
-  {
-    id: "3",
-    leadName: "Raj Patel",
-    projectName: "Residential Project",
-    visitDate: "2024-01-18T11:00:00Z",
-    status: "cancelled",
-    assignedTo: "Amit Verma",
-  },
-  {
-    id: "4",
-    leadName: "Priya Gupta",
-    projectName: "Premium Tower",
-    visitDate: "2024-01-21T09:00:00Z",
-    status: "rescheduled",
-    assignedTo: "Rajesh Kumar",
-  },
-];
-
 const statusColors: Record<string, string> = {
-  scheduled: "bg-blue-100 text-blue-800",
-  completed: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
-  rescheduled: "bg-yellow-100 text-yellow-800",
+  SCHEDULED: "bg-blue-100 text-blue-800",
+  COMPLETED: "bg-green-100 text-green-800",
+  CANCELLED: "bg-red-100 text-red-800",
+};
+
+const statusLabels: Record<string, string> = {
+  SCHEDULED: "Scheduled",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
 };
 
 const columns: ColumnDef<SiteVisit>[] = [
   {
+    accessorKey: "siteVisitNumber",
+    header: "SV Number",
+    cell: ({ row }) => (
+      <Link
+        href={`/site-visits/${row.original.id}`}
+        className="font-mono text-sm text-primary hover:underline"
+      >
+        {row.getValue("siteVisitNumber") || "—"}
+      </Link>
+    ),
+  },
+  {
+    accessorKey: "leadNumber",
+    header: "Lead Number",
+    cell: ({ row }) => (
+      <Link
+        href={`/leads/${row.original.leadId}`}
+        className="font-mono text-sm text-primary hover:underline"
+      >
+        {row.getValue("leadNumber") || "—"}
+      </Link>
+    ),
+  },
+  {
     accessorKey: "leadName",
     header: "Lead",
     cell: ({ row }) => (
-      <Link href={`/leads/${row.original.id}`} className="hover:underline font-medium">
+      <Link href={`/leads/${row.original.leadId}`} className="hover:underline font-medium">
         {row.getValue("leadName")}
       </Link>
     ),
@@ -89,13 +92,7 @@ const columns: ColumnDef<SiteVisit>[] = [
     header: "Visit Date",
     cell: ({ row }) => {
       const date = new Date(row.getValue("visitDate"));
-      return date.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
+      return formatDateTime(date);
     },
   },
   {
@@ -104,8 +101,8 @@ const columns: ColumnDef<SiteVisit>[] = [
     cell: ({ row }) => {
       const status = row.getValue("status") as string;
       return (
-        <Badge className={statusColors[status]}>
-          {status}
+        <Badge className={statusColors[status] || "bg-gray-100 text-gray-800"}>
+          {statusLabels[status] || status}
         </Badge>
       );
     },
@@ -113,6 +110,15 @@ const columns: ColumnDef<SiteVisit>[] = [
   {
     accessorKey: "assignedTo",
     header: "Assigned To",
+  },
+  {
+    accessorKey: "createdAt",
+    header: "Created At",
+    cell: ({ row }) => formatDateTime(row.getValue("createdAt")),
+  },
+  {
+    accessorKey: "createdBy",
+    header: "Created By",
   },
   {
     id: "actions",
@@ -132,13 +138,11 @@ const columns: ColumnDef<SiteVisit>[] = [
                 View
               </Link>
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem className="text-destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete
+            <DropdownMenuItem asChild>
+              <Link href={`/leads/${visit.leadId}`}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit Lead
+              </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -152,48 +156,140 @@ export default function SiteVisitsPage() {
   const { toast } = useToast();
   const [currentPage, setCurrentPage] = React.useState(1);
   const [filters, setFilters] = React.useState({ status: "" });
+  const [search, setSearch] = React.useState("");
+  const [siteVisits, setSiteVisits] = React.useState<SiteVisit[]>([]);
+  const [totalItems, setTotalItems] = React.useState(0);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchSiteVisits = async () => {
+      try {
+        setIsLoading(true);
+        const params: Record<string, any> = { page: currentPage, limit: 20 };
+        if (filters.status) params.status = filters.status;
+        if (search.trim()) params.search = search.trim();
+        const res = await siteVisitApi.list(params);
+        if (res.data.success && res.data.data) {
+          const mapped = res.data.data.map((item: any) => ({
+            id: item.id,
+            siteVisitNumber: item.siteVisitNumber || undefined,
+            leadId: item.lead?.id || item.leadId || "",
+            leadNumber: item.lead?.leadNumber || "—",
+            leadName: item.lead
+              ? `${item.lead.firstName} ${item.lead.lastName}`.trim()
+              : "—",
+            projectName: item.project?.name || "—",
+            visitDate: item.scheduledAt || item.visitDate || item.createdAt,
+            status: (item.status || "SCHEDULED") as SiteVisit["status"],
+            assignedTo: item.assignee
+              ? `${item.assignee.firstName} ${item.assignee.lastName}`.trim()
+              : "—",
+            createdAt: item.createdAt,
+            createdBy: item.creator
+              ? `${item.creator.firstName} ${item.creator.lastName}`.trim()
+              : "—",
+            feedback: item.feedback || undefined,
+          }));
+          setSiteVisits(mapped);
+          setTotalItems(res.data.pagination?.total ?? mapped.length);
+        } else {
+          setSiteVisits([]);
+          setTotalItems(0);
+        }
+      } catch {
+        toast({ title: "Error", description: "Failed to load site visits", variant: "destructive" as any });
+        setSiteVisits([]);
+        setTotalItems(0);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchSiteVisits();
+  }, [currentPage, filters.status, search, toast]);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Site Visits</h1>
+          <h1 className="text-xl font-semibold">Site Visits</h1>
           <p className="text-muted-foreground">
             Schedule and track project site visits
           </p>
         </div>
-        <Button onClick={() => toast({ title: "Schedule Visit", description: "Schedule visit form coming soon" })}>
+        <Button onClick={() => toast({ title: "Schedule Visit", description: "Schedule from Lead detail or Prospect status" })}>
           <Plus className="mr-2 h-4 w-4" />
           Schedule Visit
         </Button>
       </div>
 
       <div className="space-y-4">
-        <FilterBar onReset={() => setFilters({ status: "" })}>
-          <FilterField
-            label="Status"
-            type="select"
-            value={filters.status}
-            onChange={(value) => setFilters({ status: value as string })}
-            options={[
-              { label: "Scheduled", value: "scheduled" },
-              { label: "Completed", value: "completed" },
-              { label: "Cancelled", value: "cancelled" },
-              { label: "Rescheduled", value: "rescheduled" },
-            ]}
-            placeholder="All Statuses"
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="relative min-w-[16rem] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search visits, leads, or companies..."
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setCurrentPage(1);
+            }}
+            className="pl-9"
           />
-        </FilterBar>
+          </div>
+          <FilterBar
+            className="flex-none"
+            onReset={() => {
+              setFilters({ status: "" });
+              setSearch("");
+              setCurrentPage(1);
+            }}
+          >
+            <FilterField
+              label="Status"
+              type="select"
+              value={filters.status}
+              onChange={(value) => {
+                setFilters({ status: value as string });
+                setCurrentPage(1);
+              }}
+              options={[
+                { label: "Scheduled", value: "SCHEDULED" },
+                { label: "Completed", value: "COMPLETED" },
+                { label: "Cancelled", value: "CANCELLED" },
+              ]}
+              placeholder="All Statuses"
+            />
+          </FilterBar>
+        </div>
 
         <DataTable
           columns={columns}
           data={siteVisits}
-          searchKey="leadName"
-          searchPlaceholder="Search by lead name..."
-          totalItems={siteVisits.length}
-          currentPage={currentPage}
-          onPageChange={setCurrentPage}
-        />
+            isLoading={isLoading}
+            totalItems={totalItems}
+            currentPage={currentPage}
+            onPageChange={setCurrentPage}
+            serverPagination
+          />
       </div>
     </div>
   );

@@ -7,6 +7,47 @@ import { EffectivePermissionService } from '../services/effectivePermissions';
 
 const router = Router();
 
+function toObjectAccessKey(moduleName: string): string {
+  const cleaned = (moduleName || '').trim();
+  if (!cleaned) return cleaned;
+
+  return cleaned
+    .split('_')
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase())
+    .join('');
+}
+
+function buildObjectPermissionMap(effectivePermissions: Array<{ name: string; module: string }>) {
+  const permissions: Record<string, { create: boolean; read: boolean; update: boolean; delete: boolean; viewAll: boolean; modifyAll: boolean }> = {};
+
+  for (const permission of effectivePermissions) {
+    const objectKey = toObjectAccessKey(permission.module);
+    if (!objectKey) continue;
+
+    const current = permissions[objectKey] || {
+      create: false,
+      read: false,
+      update: false,
+      delete: false,
+      viewAll: false,
+      modifyAll: false,
+    };
+
+    const permissionName = permission.name.toUpperCase();
+    if (permissionName.endsWith('_CREATE')) current.create = true;
+    if (permissionName.endsWith('_READ') || permissionName.endsWith('_VIEW')) current.read = true;
+    if (permissionName.endsWith('_UPDATE') || permissionName.endsWith('_EDIT')) current.update = true;
+    if (permissionName.endsWith('_DELETE') || permissionName.endsWith('_DELECT')) current.delete = true;
+    if (permissionName.endsWith('_VIEW_ALL')) current.viewAll = true;
+    if (permissionName.endsWith('_MODIFY_ALL')) current.modifyAll = true;
+
+    permissions[objectKey] = current;
+  }
+
+  return permissions;
+}
+
 router.post('/login', async (req: Request, res: Response) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
@@ -15,7 +56,7 @@ router.post('/login', async (req: Request, res: Response) => {
       where: { email, isActive: true },
       include: {
         tenant: { select: { id: true, name: true, slug: true, isActive: true, companyStartDate: true, companyExpiryDate: true } },
-        profile: { select: { id: true, name: true, description: true, leadStatusAccess: true } },
+        profile: { select: { id: true, name: true, description: true, isAdmin: true, leadStatusAccess: true } },
         roles: {
           include: {
             role: {
@@ -68,22 +109,13 @@ router.post('/login', async (req: Request, res: Response) => {
     setAuthCookie(res, token);
 
     const effectivePerms = await EffectivePermissionService.getEffectivePermissions(user.id);
+    const objectPermissions = buildObjectPermissionMap(effectivePerms);
 
     const hasFullAccess = effectivePerms.some((p) => p.name === 'FULL_SYSTEM_ACCESS');
     const granularPermissions: Record<string, string[]> = {};
     for (const perm of effectivePerms) {
       if (!granularPermissions[perm.module]) granularPermissions[perm.module] = [];
       granularPermissions[perm.module].push(perm.name);
-    }
-
-    const legacyPermissions: Record<string, any> = {};
-    for (const userRole of user.roles) {
-      for (const rolePerm of userRole.role.permissionSets) {
-        const objName = rolePerm.permissionSet.objectName;
-        if (!legacyPermissions[objName]) {
-          legacyPermissions[objName] = rolePerm.permissionSet.permissions;
-        }
-      }
     }
 
     let companyLifecycleStatus = 'active';
@@ -106,19 +138,24 @@ router.post('/login', async (req: Request, res: Response) => {
           avatar: user.avatar,
           isSuperAdmin: user.isSuperAdmin,
         },
-        profile: user.profile,
+        profile: user.profile ? { ...user.profile, isAdmin: !!user.profile.isAdmin } : null,
         tenant: {
           ...user.tenant,
           companyLifecycleStatus,
         },
         roles: user.roles.map((ur) => ur.role.name),
-        permissions: legacyPermissions,
+        permissions: objectPermissions,
         effectivePermissions: effectivePerms.map((p) => p.name),
         effectivePermissionsByModule: granularPermissions,
         hasFullAccess,
       },
     });
   } catch (error: any) {
+    const errorCode = error && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : undefined;
+    const errorDetail = error instanceof TypeError ? error.message : error instanceof Error ? error.name : 'Unknown error';
+    console.error('Login failed:', errorDetail, errorCode);
     if (error.name === 'ZodError') {
       return res.status(400).json({ success: false, error: error.errors[0].message });
     }
@@ -166,7 +203,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
         avatar: true,
         isSuperAdmin: true,
         tenant: { select: { id: true, name: true, slug: true, logo: true, companyStartDate: true, companyExpiryDate: true, isActive: true } },
-        profile: { select: { id: true, name: true, description: true, leadStatusAccess: true } },
+        profile: { select: { id: true, name: true, description: true, isAdmin: true, leadStatusAccess: true } },
         roles: {
           include: {
             role: {
@@ -186,22 +223,13 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     const effectivePerms = await EffectivePermissionService.getEffectivePermissions(user.id);
+    const objectPermissions = buildObjectPermissionMap(effectivePerms);
 
     const hasFullAccess = effectivePerms.some((p) => p.name === 'FULL_SYSTEM_ACCESS');
     const granularPermissions: Record<string, string[]> = {};
     for (const perm of effectivePerms) {
       if (!granularPermissions[perm.module]) granularPermissions[perm.module] = [];
       granularPermissions[perm.module].push(perm.name);
-    }
-
-    const legacyPermissions: Record<string, any> = {};
-    for (const userRole of user.roles) {
-      for (const rolePerm of userRole.role.permissionSets) {
-        const objName = rolePerm.permissionSet.objectName;
-        if (!legacyPermissions[objName]) {
-          legacyPermissions[objName] = rolePerm.permissionSet.permissions;
-        }
-      }
     }
 
     let companyLifecycleStatus = 'active';
@@ -225,13 +253,13 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
           isSuperAdmin: user.isSuperAdmin,
           impersonatedBy: req.user?.impersonatedBy || null,
         },
-        profile: user.profile,
+        profile: user.profile ? { ...user.profile, isAdmin: !!user.profile.isAdmin } : null,
         tenant: user.tenant ? {
           ...user.tenant,
           companyLifecycleStatus,
         } : null,
         roles: user.roles.map((ur) => ur.role.name),
-        permissions: legacyPermissions,
+        permissions: objectPermissions,
         effectivePermissions: effectivePerms.map((p) => p.name),
         effectivePermissionsByModule: granularPermissions,
         hasFullAccess,

@@ -139,10 +139,13 @@ router.get('/:userId/permission-sets', requirePermission('PERMISSION_SET_READ'),
     }
 
     const assignments = await prisma.userPermissionAssignment.findMany({
-      where: { userId: req.params.userId },
+      where: { userId: req.params.userId, permissionSet: { tenantId: req.tenantId!, isActive: true } },
       include: {
         permissionSet: {
-          include: { items: { include: { permission: true } } },
+          include: {
+            items: { include: { permission: true } },
+            objectPermissions: { include: { object: { select: { id: true, name: true, label: true } } } },
+          },
         },
       },
     });
@@ -156,45 +159,52 @@ router.get('/:userId/permission-sets', requirePermission('PERMISSION_SET_READ'),
 
 router.post('/:userId/permission-sets', requirePermission('PERMISSION_SET_ASSIGN'), async (req: AuthRequest, res: Response) => {
   try {
-    const { permissionSetIds } = req.body;
-    if (!Array.isArray(permissionSetIds) || permissionSetIds.length === 0) {
+    const permissionSetIds: string[] = Array.isArray(req.body.permissionSetIds)
+      ? ([...new Set(req.body.permissionSetIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0))] as string[])
+      : [];
+
+    if (permissionSetIds.length === 0) {
       return res.status(400).json({ success: false, error: 'permissionSetIds array is required' });
     }
 
-    const uniqueIds = [...new Set(permissionSetIds)];
-
-    const user = await prisma.user.findFirst({
+    const targetUser = await prisma.user.findFirst({
       where: { id: req.params.userId, tenantId: req.tenantId! },
+      select: { id: true, tenantId: true, isActive: true },
     });
 
-    if (!user) {
+    if (!targetUser) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
+    if (!targetUser.isActive) {
+      return res.status(400).json({ success: false, error: 'Cannot assign permissions to an inactive user' });
+    }
+
     const validSets = await prisma.newPermissionSet.findMany({
-      where: { id: { in: uniqueIds }, tenantId: req.tenantId!, isActive: true },
-      select: { id: true },
+      where: { id: { in: permissionSetIds }, tenantId: req.tenantId!, isActive: true },
+      select: { id: true, name: true },
     });
 
-    if (validSets.length !== uniqueIds.length) {
-      return res.status(422).json({ success: false, error: 'One or more invalid permission set IDs' });
+    if (validSets.length !== permissionSetIds.length) {
+      const validIds = new Set(validSets.map((set) => set.id));
+      const invalidIds = permissionSetIds.filter((id) => !validIds.has(id));
+      return res.status(422).json({ success: false, error: 'One or more permission sets are invalid', invalidPermissionSetIds: invalidIds });
     }
 
     const existing = await prisma.userPermissionAssignment.findMany({
-      where: { userId: req.params.userId, permissionSetId: { in: uniqueIds } },
+      where: { userId: targetUser.id, permissionSetId: { in: permissionSetIds } },
       select: { permissionSetId: true },
     });
 
-    const existingIds = new Set(existing.map((e) => e.permissionSetId));
-    const newIds = uniqueIds.filter((id: string) => !existingIds.has(id));
+    const existingIds = new Set(existing.map((assignment) => assignment.permissionSetId));
+    const newIds = permissionSetIds.filter((id) => !existingIds.has(id));
 
-    if (newIds.length === 0) {
-      return res.status(409).json({ success: false, error: 'All permission sets already assigned' });
+    if (newIds.length > 0) {
+      await prisma.userPermissionAssignment.createMany({
+        data: newIds.map((permissionSetId) => ({ userId: targetUser.id, permissionSetId })),
+        skipDuplicates: true,
+      });
     }
-
-    const created = await prisma.userPermissionAssignment.createMany({
-      data: newIds.map((permissionSetId: string) => ({ userId: req.params.userId, permissionSetId })),
-    });
 
     await prisma.auditLog.create({
       data: {
@@ -202,12 +212,35 @@ router.post('/:userId/permission-sets', requirePermission('PERMISSION_SET_ASSIGN
         userId: req.user!.id,
         action: 'ASSIGN',
         objectType: 'UserPermissionAssignment',
-        objectId: req.params.userId,
+        objectId: targetUser.id,
         newValues: { permissionSetIds: newIds },
       },
     });
 
-    res.status(201).json({ success: true, data: { assigned: created.count, alreadyAssigned: existingIds.size } });
+    const assignments = await prisma.userPermissionAssignment.findMany({
+      where: {
+        userId: targetUser.id,
+        permissionSet: { tenantId: req.tenantId!, isActive: true },
+      },
+      include: {
+        permissionSet: {
+          include: {
+            items: { include: { permission: true } },
+            objectPermissions: { include: { object: { select: { id: true, name: true, label: true } } } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        assigned: newIds.length,
+        alreadyAssigned: existingIds.size,
+        assignments,
+      },
+    });
   } catch (error) {
     console.error('Assign permission sets to user error:', error);
     res.status(500).json({ success: false, error: 'Failed to assign permission sets' });

@@ -13,6 +13,7 @@ export const VALID_LEAD_STATUSES: LeadStatus[] = [
 export const PROFILE_STATUS_ACCESS: Record<string, LeadStatus[]> = {
   Marketing: [LeadStatus.NEW, LeadStatus.INCOMING],
   Presales: [LeadStatus.NEW, LeadStatus.INCOMING],
+  'Sales Executive': [...VALID_LEAD_STATUSES],
   SVC: [LeadStatus.PROSPECT, LeadStatus.SITE_VISIT_SCHEDULED],
   Sales: [LeadStatus.SITE_VISIT_SCHEDULED, LeadStatus.SITE_VISIT_HAPPENED],
   CRM: [LeadStatus.SITE_VISIT_HAPPENED, LeadStatus.BOOKED],
@@ -25,24 +26,26 @@ export const PROFILE_STATUS_ACCESS: Record<string, LeadStatus[]> = {
 
 export const STATUS_TRANSITIONS: Record<string, { next: LeadStatus; profiles: string[] }[]> = {
   [LeadStatus.NEW]: [
-    { next: LeadStatus.INCOMING, profiles: ['Marketing', 'Presales', 'Admin', 'CRM Admin'] },
+    { next: LeadStatus.INCOMING, profiles: ['Marketing', 'Presales', 'Sales Executive', 'Admin', 'CRM Admin', 'Manager'] },
+    { next: LeadStatus.LOST, profiles: ['Marketing', 'Presales', 'Sales Executive', 'Recovery', 'Admin', 'CRM Admin', 'Manager'] },
   ],
   [LeadStatus.INCOMING]: [
-    { next: LeadStatus.PROSPECT, profiles: ['Presales', 'Admin', 'CRM Admin'] },
-    { next: LeadStatus.LOST, profiles: ['Presales', 'Recovery', 'Admin', 'CRM Admin'] },
+    { next: LeadStatus.PROSPECT, profiles: ['Presales', 'Sales Executive', 'Admin', 'CRM Admin', 'Manager'] },
+    { next: LeadStatus.LOST, profiles: ['Presales', 'Sales Executive', 'Recovery', 'Admin', 'CRM Admin', 'Manager'] },
   ],
   [LeadStatus.PROSPECT]: [
-    { next: LeadStatus.SITE_VISIT_SCHEDULED, profiles: ['SVC', 'Admin', 'CRM Admin'] },
+    { next: LeadStatus.SITE_VISIT_SCHEDULED, profiles: ['SVC', 'Sales Executive', 'Admin', 'CRM Admin', 'Manager'] },
   ],
   [LeadStatus.SITE_VISIT_SCHEDULED]: [
-    { next: LeadStatus.SITE_VISIT_HAPPENED, profiles: ['SVC', 'Sales', 'Admin', 'CRM Admin'] },
+    { next: LeadStatus.SITE_VISIT_HAPPENED, profiles: ['SVC', 'Sales', 'Sales Executive', 'Admin', 'CRM Admin', 'Manager'] },
+    { next: LeadStatus.PROSPECT, profiles: ['SVC', 'Sales Executive', 'Admin', 'CRM Admin', 'Manager'] },
   ],
   [LeadStatus.SITE_VISIT_HAPPENED]: [
-    { next: LeadStatus.BOOKED, profiles: ['CRM', 'Sales', 'Admin', 'CRM Admin'] },
+    { next: LeadStatus.BOOKED, profiles: ['CRM', 'Sales', 'Sales Executive', 'Admin', 'CRM Admin', 'Manager'] },
   ],
   [LeadStatus.BOOKED]: [],
   [LeadStatus.LOST]: [
-    { next: LeadStatus.INCOMING, profiles: ['Recovery', 'Admin', 'CRM Admin'] },
+    { next: LeadStatus.INCOMING, profiles: ['Recovery', 'Admin', 'CRM Admin', 'Manager'] },
   ],
 };
 

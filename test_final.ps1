@@ -104,12 +104,15 @@ try { $svcUserLookup = Invoke-RestMethod -Uri "$baseUrl/api/users/$assignedUserI
 $svcEmail = if ($svcUserLookup -and $svcUserLookup.data) { $svcUserLookup.data.email } else { $null }
 if ($svcEmail) {
     Login $svcEmail "password123" | Out-Null
+    if (-not $global:currentToken) { Login $svcEmail "DctTest@123" | Out-Null }
     Log "  SVC session: $svcEmail" "Gray"
     
     $svcLeadList = AGet "/api/leads?limit=50"
     $foundSvLead = $svcLeadList.data | Where-Object { $_.id -eq $pLead.data.id }
     if ($foundSvLead) { Pass "SVC sees assigned lead" } else { Fail "SVC sees lead" "Not found in list (owner: $($foundSvLead.ownerId))" }
 
+    # Scheduling requires Lead edit + project read — admin drives setup (SVC executes the visit)
+    Login "admin@dctcrm.com" "password123" | Out-Null
     $projList = AGet "/api/projects?limit=1"
     if ($projList.data.Count -gt 0) {
         $projId = $projList.data[0].id
@@ -133,12 +136,14 @@ if ($svcEmail) {
         
         if ($salesEmail) {
             Login $salesEmail "password123" | Out-Null
+            if (-not $global:currentToken) { Login $salesEmail "DctTest@123" | Out-Null }
             Log "  Sales session: $salesEmail" "Gray"
             
             $svList = AGet "/api/site-visits?leadId=$($pLead.data.id)&limit=1"
             if ($svList.data.Count -gt 0) {
                 $svId = $svList.data[0].id
-                $completeResp = Invoke-RestMethod -Uri "$baseUrl/api/site-visits/$svId/complete" -Method PATCH -ContentType "application/json" -Body '{}' -Headers (AuthHeaders)
+                $completeBody = @{ completedAt=(Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.000Z"); customerFeedback="Sales follow-up"; completionNotes="Visit completed" } | ConvertTo-Json
+                $completeResp = Invoke-RestMethod -Uri "$baseUrl/api/site-visits/$svId/complete" -Method PATCH -ContentType "application/json" -Body $completeBody -Headers (AuthHeaders)
                 Pass "Site visit completed"
                 
                 $afterComplete = AGet "/api/leads/$($pLead.data.id)"

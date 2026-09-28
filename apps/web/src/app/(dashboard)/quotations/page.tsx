@@ -203,7 +203,7 @@ export default function QuotationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Quotations</h1>
+          <h1 className="text-xl font-semibold">Quotations</h1>
           <p className="text-muted-foreground">
             Create and manage sales quotations
           </p>
@@ -219,10 +219,11 @@ export default function QuotationsPage() {
         data={quotations}
         searchKey="quotationNumber"
         searchPlaceholder="Search by quotation number..."
-        totalItems={totalItems}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-      />
+          totalItems={totalItems}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          serverPagination
+        />
     </div>
   );
 }

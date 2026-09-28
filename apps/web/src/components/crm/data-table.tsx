@@ -51,6 +51,7 @@ interface DataTableProps<TData, TValue> {
   totalItems?: number;
   currentPage?: number;
   onPageChange?: (page: number) => void;
+  serverPagination?: boolean;
   filters?: React.ReactNode;
 }
 
@@ -60,10 +61,11 @@ export function DataTable<TData, TValue>({
   searchPlaceholder = "Search...",
   searchKey,
   isLoading = false,
-  pageSize = 10,
+  pageSize,
   totalItems,
   currentPage = 1,
   onPageChange,
+  serverPagination = false,
   filters,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
@@ -72,13 +74,17 @@ export function DataTable<TData, TValue>({
   const [rowSelection, setRowSelection] = React.useState({});
   const [globalFilter, setGlobalFilter] = React.useState("");
 
+  const effectivePageSize = pageSize ?? (serverPagination ? 20 : 10);
+
   const table = useReactTable({
     data,
     columns,
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    ...(serverPagination
+      ? {}
+      : { getPaginationRowModel: getPaginationRowModel() }),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
@@ -93,7 +99,21 @@ export function DataTable<TData, TValue>({
     },
   });
 
-  const totalPages = totalItems ? Math.ceil(totalItems / pageSize) : table.getPageCount();
+  const totalPages = totalItems
+    ? Math.max(1, Math.ceil(totalItems / effectivePageSize))
+    : serverPagination
+      ? 1
+      : table.getPageCount();
+
+  const canPrevious = serverPagination ? currentPage > 1 : table.getCanPreviousPage();
+  const canNext = serverPagination ? currentPage < totalPages : table.getCanNextPage();
+
+  const goToPage = (page: number) => {
+    onPageChange?.(page);
+    if (!serverPagination) {
+      table.setPageIndex(page - 1);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -189,23 +209,23 @@ export function DataTable<TData, TValue>({
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted-foreground">
           {totalItems
-            ? `Showing ${(currentPage - 1) * pageSize + 1} to ${Math.min(currentPage * pageSize, totalItems)} of ${totalItems} entries`
+            ? `Showing ${(currentPage - 1) * effectivePageSize + 1} to ${Math.min(currentPage * effectivePageSize, totalItems)} of ${totalItems} entries`
             : `Showing ${table.getFilteredSelectedRowModel().rows.length} of ${table.getFilteredRowModel().rows.length} rows`}
         </div>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="icon"
-            onClick={() => onPageChange?.(1) || table.setPageIndex(0)}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => goToPage(1)}
+            disabled={!canPrevious}
           >
             <ChevronsLeft className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
             size="icon"
-            onClick={() => onPageChange?.(currentPage - 1) || table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={!canPrevious}
           >
             <ChevronLeft className="h-4 w-4" />
           </Button>
@@ -215,16 +235,16 @@ export function DataTable<TData, TValue>({
           <Button
             variant="outline"
             size="icon"
-            onClick={() => onPageChange?.(currentPage + 1) || table.nextPage()}
-            disabled={!table.getCanNextPage()}
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={!canNext}
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
           <Button
             variant="outline"
             size="icon"
-            onClick={() => onPageChange?.(totalPages) || table.setPageIndex(table.getPageCount() - 1)}
-            disabled={!table.getCanNextPage()}
+            onClick={() => goToPage(totalPages)}
+            disabled={!canNext}
           >
             <ChevronsRight className="h-4 w-4" />
           </Button>

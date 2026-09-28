@@ -231,7 +231,7 @@ export default function ProjectsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Projects</h1>
+          <h1 className="text-xl font-semibold">Projects</h1>
           <p className="text-muted-foreground">
             Manage your real estate projects and inventory
           </p>
@@ -251,7 +251,7 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Projects</p>
-                <p className="text-2xl font-bold">{projects.length}</p>
+                <p className="text-xl font-semibold">{projects.length}</p>
               </div>
             </div>
           </CardContent>
@@ -264,7 +264,7 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Units</p>
-                <p className="text-2xl font-bold">
+                <p className="text-xl font-semibold">
                   {projects.reduce((sum, p) => sum + p.totalUnits, 0)}
                 </p>
               </div>
@@ -279,7 +279,7 @@ export default function ProjectsPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Units Sold</p>
-                <p className="text-2xl font-bold">
+                <p className="text-xl font-semibold">
                   {projects.reduce((sum, p) => sum + p.soldUnits, 0)}
                 </p>
               </div>
@@ -293,10 +293,11 @@ export default function ProjectsPage() {
         data={projects}
         searchKey="name"
         searchPlaceholder="Search projects..."
-        totalItems={totalItems}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-      />
+          totalItems={totalItems}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          serverPagination
+        />
     </div>
   );
 }

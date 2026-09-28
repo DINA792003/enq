@@ -39,6 +39,7 @@ router.get('/', requirePermission('PERMISSION_SET_READ'), async (req: AuthReques
         where,
         include: {
           items: { include: { permission: true } },
+          objectPermissions: { include: { object: { select: { id: true, name: true, label: true, isActive: true } } } },
           _count: { select: { userAssignments: true } },
         },
         skip,
@@ -70,6 +71,7 @@ router.get('/:id', requirePermission('PERMISSION_SET_READ'), async (req: AuthReq
       where: { id: req.params.id, tenantId: req.tenantId! },
       include: {
         items: { include: { permission: true } },
+        objectPermissions: { include: { object: { select: { id: true, name: true, label: true, isActive: true } } } },
         userAssignments: {
           include: {
             user: { select: { id: true, firstName: true, lastName: true, email: true, isActive: true } },
@@ -93,6 +95,7 @@ router.get('/:id', requirePermission('PERMISSION_SET_READ'), async (req: AuthReq
 router.post('/', requirePermission('PERMISSION_SET_CREATE'), async (req: AuthRequest, res: Response) => {
   try {
     const data = permissionSetSchema.parse(req.body);
+    const permissionIds = [...new Set(data.permissionIds)];
 
     const existing = await prisma.newPermissionSet.findFirst({
       where: { tenantId: req.tenantId!, name: data.name },
@@ -103,10 +106,10 @@ router.post('/', requirePermission('PERMISSION_SET_CREATE'), async (req: AuthReq
     }
 
     const validPermissions = await prisma.permission.findMany({
-      where: { id: { in: data.permissionIds }, isActive: true },
+      where: { id: { in: permissionIds }, isActive: true },
     });
 
-    if (validPermissions.length !== data.permissionIds.length) {
+    if (validPermissions.length !== permissionIds.length) {
       return res.status(422).json({ success: false, error: 'One or more invalid permission IDs' });
     }
 
@@ -116,11 +119,12 @@ router.post('/', requirePermission('PERMISSION_SET_CREATE'), async (req: AuthReq
         name: data.name,
         description: data.description,
         items: {
-          create: data.permissionIds.map((permissionId) => ({ permissionId })),
+          create: permissionIds.map((permissionId) => ({ permissionId })),
         },
       },
       include: {
         items: { include: { permission: true } },
+        objectPermissions: { include: { object: { select: { id: true, name: true, label: true, isActive: true } } } },
       },
     });
 
@@ -131,7 +135,7 @@ router.post('/', requirePermission('PERMISSION_SET_CREATE'), async (req: AuthReq
         action: 'CREATE',
         objectType: 'NewPermissionSet',
         objectId: permissionSet.id,
-        newValues: { name: data.name, permissionCount: data.permissionIds.length },
+        newValues: { name: data.name, permissionCount: permissionIds.length },
       },
     });
 
@@ -156,6 +160,7 @@ router.put('/:id', requirePermission('PERMISSION_SET_UPDATE'), async (req: AuthR
     }
 
     const data = updatePermissionSetSchema.parse(req.body);
+    const permissionIds = data.permissionIds ? [...new Set(data.permissionIds)] : undefined;
 
     if (data.name && data.name !== existing.name) {
       const duplicate = await prisma.newPermissionSet.findFirst({
@@ -172,17 +177,17 @@ router.put('/:id', requirePermission('PERMISSION_SET_UPDATE'), async (req: AuthR
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
     await prisma.$transaction(async (tx) => {
-      if (data.permissionIds) {
+      if (permissionIds) {
         const validPermissions = await tx.permission.findMany({
-          where: { id: { in: data.permissionIds }, isActive: true },
+          where: { id: { in: permissionIds }, isActive: true },
         });
-        if (validPermissions.length !== data.permissionIds.length) {
+        if (validPermissions.length !== permissionIds.length) {
           throw new Error('Invalid permission IDs');
         }
 
         await tx.newPermissionSetItem.deleteMany({ where: { permissionSetId: req.params.id } });
         await tx.newPermissionSetItem.createMany({
-          data: data.permissionIds.map((permissionId) => ({ permissionSetId: req.params.id, permissionId })),
+          data: permissionIds.map((permissionId) => ({ permissionSetId: req.params.id, permissionId })),
         });
       }
 

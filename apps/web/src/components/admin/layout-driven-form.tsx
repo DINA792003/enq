@@ -179,7 +179,7 @@ export default function LayoutDrivenForm({
         return (
           <Switch
             checked={!!value}
-            onCheckedChange={(checked) => handleFieldChange(field.name, checked)}
+            onCheckedChange={(checked: boolean) => handleFieldChange(field.name, checked)}
             disabled={isDisabled}
           />
         );

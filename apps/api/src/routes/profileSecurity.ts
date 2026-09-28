@@ -4,6 +4,91 @@ import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
 
+export type ProfileSecurityObjectPermission = {
+  objectId: string;
+  canCreate: boolean;
+  canRead: boolean;
+  canUpdate: boolean;
+  canDelete: boolean;
+  viewAll: boolean;
+  modifyAll: boolean;
+};
+
+export function reconcilePermissionIdsForObjectPermissions(
+  objectPermissions: ProfileSecurityObjectPermission[] = [],
+  permissionIds: string[] = [],
+  permissionCatalog: Array<{ id: string; name: string }> = [],
+  objectNameMap: Record<string, string> = {},
+): string[] {
+  const removedNames = new Set<string>();
+
+  for (const permission of objectPermissions) {
+    const objectName = objectNameMap[permission.objectId];
+    if (!objectName) continue;
+
+    const normalizedName = objectName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+    const actionMap = {
+      canCreate: `${normalizedName}_CREATE`,
+      canRead: `${normalizedName}_READ`,
+      canUpdate: `${normalizedName}_UPDATE`,
+      canDelete: `${normalizedName}_DELETE`,
+      viewAll: `${normalizedName}_VIEW_ALL`,
+      modifyAll: `${normalizedName}_MODIFY_ALL`,
+    } as const;
+
+    for (const [key, permissionName] of Object.entries(actionMap)) {
+      const value = permission[key as keyof ProfileSecurityObjectPermission];
+      if (!value) removedNames.add(permissionName);
+    }
+  }
+
+  const catalogById = new Map(permissionCatalog.map((permission) => [permission.id, permission.name]));
+  return permissionIds.filter((id) => {
+    const permissionName = catalogById.get(id);
+    return !permissionName || !removedNames.has(permissionName);
+  });
+}
+
+export function reconcileObjectPermissionsForPermissionIds(
+  objectPermissions: ProfileSecurityObjectPermission[] = [],
+  permissionIds: string[] = [],
+  permissionCatalog: Array<{ id: string; name: string }> = [],
+  objectNameMap: Record<string, string> = {},
+): ProfileSecurityObjectPermission[] {
+  const allowedNames = new Set<string>();
+  const catalogById = new Map(permissionCatalog.map((permission) => [permission.id, permission.name]));
+
+  for (const permissionId of permissionIds) {
+    const permissionName = catalogById.get(permissionId);
+    if (permissionName) allowedNames.add(permissionName);
+  }
+
+  return objectPermissions.map((permission) => {
+    const objectName = objectNameMap[permission.objectId];
+    if (!objectName) return permission;
+
+    const normalizedName = objectName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+    const actionMap = {
+      canCreate: `${normalizedName}_CREATE`,
+      canRead: `${normalizedName}_READ`,
+      canUpdate: `${normalizedName}_UPDATE`,
+      canDelete: `${normalizedName}_DELETE`,
+      viewAll: `${normalizedName}_VIEW_ALL`,
+      modifyAll: `${normalizedName}_MODIFY_ALL`,
+    } as const;
+
+    const next = { ...permission };
+    for (const [key, permissionName] of Object.entries(actionMap)) {
+      const value = permission[key as keyof ProfileSecurityObjectPermission];
+      if (value && !allowedNames.has(permissionName)) {
+        next[key as Exclude<keyof ProfileSecurityObjectPermission, 'objectId'>] = false;
+      }
+    }
+
+    return next;
+  });
+}
+
 const router = Router();
 router.use(authenticate);
 
@@ -40,15 +125,24 @@ router.get('/:profileId/security', requirePermission('PROFILE_READ'), async (req
         select: { id: true, name: true, label: true, fields: { where: { isActive: true }, select: { id: true, name: true, label: true, fieldType: true }, orderBy: { displayOrder: 'asc' } } },
         orderBy: { label: 'asc' },
       }),
-      prisma.profileObjectPermission.findMany({ where: { profileId: req.params.profileId } }),
-      prisma.profileFieldPermission.findMany({ where: { profileId: req.params.profileId } }),
-      prisma.userProfilePermission.findMany({ where: { profileId: req.params.profileId }, include: { permission: true } }),
+      prisma.profileObjectPermission.findMany({ where: { profileId: req.params.profileId, tenantId: req.tenantId! } }),
+      prisma.profileFieldPermission.findMany({ where: { profileId: req.params.profileId, tenantId: req.tenantId! } }),
+      prisma.userProfilePermission.findMany({ where: { profileId: req.params.profileId, permission: { isActive: true } }, include: { permission: true } }),
     ]);
+
+    const objectNameMap = Object.fromEntries(objects.map((objectDefinition) => [objectDefinition.id, objectDefinition.name]));
+    const permissionCatalog = await prisma.permission.findMany({ where: { isActive: true }, select: { id: true, name: true } });
+    const sanitizedObjectPermissions = reconcileObjectPermissionsForPermissionIds(
+      objectPermissions,
+      permissions.map((item) => item.permissionId),
+      permissionCatalog,
+      objectNameMap,
+    );
 
     const storedAccess = profile.leadStatusAccess && typeof profile.leadStatusAccess === 'object' && !Array.isArray(profile.leadStatusAccess)
       ? profile.leadStatusAccess as Record<string, any>
       : {};
-    res.json({ success: true, data: { profile, objects, objectPermissions, fieldPermissions, permissions: permissions.map((item) => item.permission), recordAccess: storedAccess.recordAccess || {} } });
+    res.json({ success: true, data: { profile, objects, objectPermissions: sanitizedObjectPermissions, fieldPermissions, permissions: permissions.map((item) => item.permission), recordAccess: storedAccess.recordAccess || {} } });
   } catch (error) {
     console.error('Get profile security error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch profile security' });
@@ -61,10 +155,56 @@ router.put('/:profileId/security', requirePermission('PROFILE_PERMISSION_MANAGE'
     const profile = await prisma.profile.findFirst({ where: { id: req.params.profileId, tenantId: req.tenantId! }, select: { id: true, leadStatusAccess: true } });
     if (!profile) return res.status(404).json({ success: false, error: 'Profile not found' });
 
+    if (data.objectPermissions?.length) {
+      const objectIds = [...new Set(data.objectPermissions.map((item) => item.objectId))];
+      const objectCount = await prisma.objectDefinition.count({ where: { id: { in: objectIds }, tenantId: req.tenantId!, isActive: true } });
+      if (objectCount !== objectIds.length) return res.status(400).json({ success: false, error: 'One or more objects were not found in this tenant' });
+    }
+
+    if (data.fieldPermissions?.length) {
+      const fieldIds = [...new Set(data.fieldPermissions.map((item) => item.fieldId))];
+      const fieldCount = await prisma.fieldDefinition.count({ where: { id: { in: fieldIds }, tenantId: req.tenantId!, isActive: true } });
+      if (fieldCount !== fieldIds.length) return res.status(400).json({ success: false, error: 'One or more fields were not found in this tenant' });
+    }
+
+    if (data.permissionIds?.length) {
+      const permissionIds = [...new Set(data.permissionIds)];
+      const permissionCount = await prisma.permission.count({ where: { id: { in: permissionIds }, isActive: true } });
+      if (permissionCount !== permissionIds.length) return res.status(400).json({ success: false, error: 'One or more permissions are invalid or inactive' });
+    }
+
+    const objectNameMap = data.objectPermissions?.length
+      ? Object.fromEntries(
+          (await prisma.objectDefinition.findMany({
+            where: { id: { in: [...new Set(data.objectPermissions.map((item) => item.objectId))] }, tenantId: req.tenantId!, isActive: true },
+            select: { id: true, name: true },
+          })).map((objectDefinition) => [objectDefinition.id, objectDefinition.name]),
+        )
+      : {};
+
+    const permissionCatalog = await prisma.permission.findMany({ where: { isActive: true }, select: { id: true, name: true } });
+    const normalizedPermissionIds = data.objectPermissions?.length
+      ? reconcilePermissionIdsForObjectPermissions(
+          data.objectPermissions,
+          data.permissionIds ?? [],
+          permissionCatalog,
+          objectNameMap,
+        )
+      : data.permissionIds ?? [];
+
+    const normalizedObjectPermissions = data.objectPermissions?.length
+      ? reconcileObjectPermissionsForPermissionIds(
+          data.objectPermissions,
+          normalizedPermissionIds,
+          permissionCatalog,
+          objectNameMap,
+        )
+      : data.objectPermissions ?? [];
+
     await prisma.$transaction(async (tx) => {
       if (data.objectPermissions) {
         await tx.profileObjectPermission.deleteMany({ where: { profileId: profile.id } });
-        if (data.objectPermissions.length) await tx.profileObjectPermission.createMany({ data: data.objectPermissions.map((item) => ({ ...item, profileId: profile.id, tenantId: req.tenantId! })) });
+        if (normalizedObjectPermissions.length) await tx.profileObjectPermission.createMany({ data: normalizedObjectPermissions.map((item) => ({ ...item, profileId: profile.id, tenantId: req.tenantId! })) });
       }
       if (data.fieldPermissions) {
         await tx.profileFieldPermission.deleteMany({ where: { profileId: profile.id } });
@@ -72,7 +212,7 @@ router.put('/:profileId/security', requirePermission('PROFILE_PERMISSION_MANAGE'
       }
       if (data.permissionIds) {
         await tx.userProfilePermission.deleteMany({ where: { profileId: profile.id } });
-        if (data.permissionIds.length) await tx.userProfilePermission.createMany({ data: data.permissionIds.map((permissionId) => ({ profileId: profile.id, permissionId })) });
+        if (normalizedPermissionIds.length) await tx.userProfilePermission.createMany({ data: normalizedPermissionIds.map((permissionId) => ({ profileId: profile.id, permissionId })) });
       }
       if (data.recordAccess) {
         const current = profile.leadStatusAccess && typeof profile.leadStatusAccess === 'object' && !Array.isArray(profile.leadStatusAccess) ? profile.leadStatusAccess as Record<string, any> : {};

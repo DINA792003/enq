@@ -126,6 +126,8 @@ model User {
   createdOpportunities     Opportunity[]              @relation("OppCreator")
   assignedSiteVisits       SiteVisit[]                @relation("SvAssignee")
   createdSiteVisits        SiteVisit[]                @relation("SvCreator")
+  completedSiteVisits      SiteVisit[]                @relation("SvCompletedBy")
+  cancelledSiteVisits      SiteVisit[]                @relation("SvCancelledBy")
   assignedBookings         Booking[]                  @relation("BookingOwner")
   createdBookings          Booking[]                  @relation("BookingCreator")
   tasks                    Task[]
@@ -142,8 +144,8 @@ model User {
   teamMemberships          RecordTeamMember[]
   prevLeadOwnerHistory     LeadOwnerHistory[]         @relation("PrevLeadOwner")
   newLeadOwnerHistory      LeadOwnerHistory[]         @relation("NewLeadOwner")
-    leadHistoryChanges       LeadOwnerHistory[]
-    roundRobinMembers        RoundRobinMember[]
+  leadHistoryChanges       LeadOwnerHistory[]
+  roundRobinMembers        RoundRobinMember[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -203,7 +205,7 @@ model Profile {
   profilePermissions UserProfilePermission[]
   objectPermissions  ProfileObjectPermission[]
   fieldPermissions   ProfileFieldPermission[]
-
+  dashboardShares    DashboardProfileShare[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -681,15 +683,15 @@ model Lead {
   auditLogs     AuditLog[]
   ownerHistory  LeadOwnerHistory[]
 
+  @@unique([tenantId, phone])
+  @@unique([tenantId, leadNumber])
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, ownerId])
-  @@unique([tenantId, phone])
   @@index([tenantId, email])
   @@index([tenantId, company])
   @@index([tenantId, source])
   @@index([tenantId, createdAt])
-  @@unique([tenantId, leadNumber])
 }
 
 // ============================================
@@ -698,11 +700,8 @@ model Lead {
 
 enum SiteVisitStatus {
   SCHEDULED
-  CONFIRMED
   COMPLETED
-  NO_SHOW
   CANCELLED
-  RESCHEDULED
 }
 
 model SiteVisit {
@@ -710,7 +709,7 @@ model SiteVisit {
   tenantId   String
   tenant     Tenant   @relation(fields: [tenantId], references: [id])
   leadId     String
-  lead       Lead     @relation(fields: [leadId], references: [id])
+  lead       Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
   projectId  String?
   project    Project? @relation(fields: [projectId], references: [id])
   assigneeId String?
@@ -720,22 +719,39 @@ model SiteVisit {
   queueId    String?
   queue      Queue?   @relation(fields: [queueId], references: [id])
 
-  scheduledAt DateTime
-  completedAt DateTime?
-  status      SiteVisitStatus @default(SCHEDULED)
-  feedback    String?
-  rating      Int?
-  notes       String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  siteVisitNumber String
 
-  activities Activity[]
-  tasks      Task[]
+  previousSiteVisitId String?
+  previousSiteVisit   SiteVisit?  @relation("SiteVisitRevisit", fields: [previousSiteVisitId], references: [id])
+  revisits            SiteVisit[] @relation("SiteVisitRevisit")
 
+  scheduledAt        DateTime
+  completedAt        DateTime?
+  completedById      String?
+  completedBy        User?           @relation("SvCompletedBy", fields: [completedById], references: [id])
+  status             SiteVisitStatus @default(SCHEDULED)
+  feedback           String?
+  customerFeedback   String?
+  completionNotes    String?
+  cancellationReason String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?           @relation("SvCancelledBy", fields: [cancelledById], references: [id])
+  rating             Int?
+  notes              String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  activities    Activity[]
+  tasks         Task[]
+  opportunities Opportunity[]
+
+  @@unique([tenantId, siteVisitNumber])
   @@index([tenantId])
   @@index([tenantId, status])
   @@index([tenantId, assigneeId])
   @@index([leadId])
+  @@index([previousSiteVisitId])
 }
 
 // ============================================
@@ -753,20 +769,25 @@ enum OpportunityStage {
 }
 
 model Opportunity {
-  id        String   @id @default(cuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  leadId    String?
-  lead      Lead?    @relation(fields: [leadId], references: [id])
-  ownerId   String?
-  owner     User?    @relation("OppOwner", fields: [ownerId], references: [id])
-  creatorId String
-  creator   User     @relation("OppCreator", fields: [creatorId], references: [id])
-  queueId   String?
-  queue     Queue?   @relation(fields: [queueId], references: [id])
-  projectId String?
-  project   Project? @relation(fields: [projectId], references: [id])
+  id          String     @id @default(cuid())
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  leadId      String?
+  lead        Lead?      @relation(fields: [leadId], references: [id])
+  ownerId     String?
+  owner       User?      @relation("OppOwner", fields: [ownerId], references: [id])
+  creatorId   String
+  creator     User       @relation("OppCreator", fields: [creatorId], references: [id])
+  queueId     String?
+  queue       Queue?     @relation(fields: [queueId], references: [id])
+  projectId   String?
+  project     Project?   @relation(fields: [projectId], references: [id])
+  unitId      String?
+  unit        Unit?      @relation(fields: [unitId], references: [id])
+  siteVisitId String?
+  siteVisit   SiteVisit? @relation(fields: [siteVisitId], references: [id])
 
+  opportunityNumber String?
   name              String
   stage             OpportunityStage @default(PROSPECTING)
   amount            Float?
@@ -783,6 +804,7 @@ model Opportunity {
   tasks      Task[]
   auditLogs  AuditLog[]
 
+  @@unique([tenantId, opportunityNumber])
   @@index([tenantId])
   @@index([tenantId, stage])
   @@index([tenantId, ownerId])
@@ -933,11 +955,11 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id         String    @id @default(cuid())
-  tenantId   String
-  tenant     Tenant    @relation(fields: [tenantId], references: [id])
-  bookingId  String
-  booking    Booking   @relation(fields: [bookingId], references: [id])
+  id        String  @id @default(cuid())
+  tenantId  String
+  tenant    Tenant  @relation(fields: [tenantId], references: [id])
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id])
 
   amount      Float
   status      PaymentStatus @default(PENDING)
@@ -1009,6 +1031,7 @@ model Unit {
 
   quotationItems QuotationItem[]
   bookings       Booking[]
+  opportunities  Opportunity[]
 
   @@unique([tenantId, projectId, number])
   @@index([tenantId])
@@ -1200,18 +1223,18 @@ enum ReportVisibility {
 }
 
 model ReportFolder {
-  id          String            @id @default(cuid())
+  id          String           @id @default(cuid())
   tenantId    String
-  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
   name        String
   description String?
-  visibility  ReportVisibility  @default(PRIVATE)
-  isShared    Boolean           @default(false)
+  visibility  ReportVisibility @default(PRIVATE)
+  isShared    Boolean          @default(false)
   deletedAt   DateTime?
   modifiedBy  String?
   createdBy   String
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   reports   Report[]
   favorites ReportFolderFavorite[]
@@ -1222,11 +1245,11 @@ model ReportFolder {
 }
 
 model Report {
-  id          String            @id @default(cuid())
+  id          String        @id @default(cuid())
   tenantId    String
-  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  tenant      Tenant        @relation(fields: [tenantId], references: [id])
   folderId    String?
-  folder      ReportFolder?     @relation(fields: [folderId], references: [id])
+  folder      ReportFolder? @relation(fields: [folderId], references: [id])
   name        String
   description String?
   type        String
@@ -1236,12 +1259,12 @@ model Report {
   filters     Json?
   groupBy     String?
   sortBy      String?
-  isShared    Boolean           @default(false)
+  isShared    Boolean       @default(false)
   deletedAt   DateTime?
   modifiedBy  String?
   createdBy   String
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   favorites ReportFavorite[]
   shares    ReportShare[]
@@ -1282,16 +1305,16 @@ model ReportFavorite {
 }
 
 model ReportFolderShare {
-  id          String        @id @default(cuid())
+  id          String       @id @default(cuid())
   tenantId    String
-  tenant      Tenant        @relation(fields: [tenantId], references: [id])
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
   folderId    String
-  folder      ReportFolder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  folder      ReportFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
   userId      String?
   roleId      String?
-  accessLevel String        @default("VIEWER")
+  accessLevel String       @default("VIEWER")
   createdBy   String
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime     @default(now())
 
   @@index([tenantId, folderId])
   @@index([userId])
@@ -1319,12 +1342,26 @@ model Dashboard {
   description String?
   layout      Json
   isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
   createdBy   String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  sharedProfiles DashboardProfileShare[]
+
   @@unique([tenantId, name])
   @@index([tenantId])
+}
+
+model DashboardProfileShare {
+  id          String    @id @default(cuid())
+  dashboardId String
+  dashboard   Dashboard @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  profileId   String
+  profile     Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([dashboardId, profileId])
+  @@index([profileId])
 }
 
 // ============================================
@@ -1632,25 +1669,25 @@ model Sequence {
 // ============================================
 
 model LeadOwnerHistory {
-  id                String    @id @default(cuid())
-  tenantId          String
-  tenant            Tenant    @relation(fields: [tenantId], references: [id])
-  leadId            String
-  lead              Lead      @relation(fields: [leadId], references: [id])
-  previousOwnerId   String?
-  previousOwner     User?     @relation("PrevLeadOwner", fields: [previousOwnerId], references: [id])
-  newOwnerId        String?
-  newOwner          User?     @relation("NewLeadOwner", fields: [newOwnerId], references: [id])
-  previousProfile   String?
-  newProfile        String?
-  previousStatus    String?
-  newStatus         String?
-  handoffReason     String?
-  changedById       String
-  changedBy         User      @relation(fields: [changedById], references: [id])
-  startDate         DateTime  @default(now())
-  endDate           DateTime?
-  createdAt         DateTime  @default(now())
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id])
+  leadId          String
+  lead            Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  previousOwnerId String?
+  previousOwner   User?     @relation("PrevLeadOwner", fields: [previousOwnerId], references: [id])
+  newOwnerId      String?
+  newOwner        User?     @relation("NewLeadOwner", fields: [newOwnerId], references: [id])
+  previousProfile String?
+  newProfile      String?
+  previousStatus  String?
+  newStatus       String?
+  handoffReason   String?
+  changedById     String
+  changedBy       User      @relation(fields: [changedById], references: [id])
+  startDate       DateTime  @default(now())
+  endDate         DateTime?
+  createdAt       DateTime  @default(now())
 
   @@index([tenantId])
   @@index([leadId])
@@ -1661,15 +1698,15 @@ model LeadOwnerHistory {
 }
 
 model RoundRobinMember {
-  id         String   @id @default(cuid())
-  tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id])
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  poolType   String
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  poolType  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([tenantId, userId, poolType])
   @@index([tenantId])

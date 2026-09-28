@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { leadSchema, normalizePhone, PHONE_DUPLICATE_ERROR } from '@dct-crm/shared';
+import { buildLeadDeletionPlan } from './leads';
 
 const baseLead = {
   lastName: 'Dup',
@@ -60,5 +61,20 @@ describe('leadSchema phone', () => {
 describe('PHONE_DUPLICATE_ERROR', () => {
   it('matches required message exactly', () => {
     expect(PHONE_DUPLICATE_ERROR).toBe('Phone number already exists for another lead.');
+  });
+});
+
+describe('buildLeadDeletionPlan', () => {
+  it('includes related lead records before the final lead delete', () => {
+    const plan = buildLeadDeletionPlan('lead-123');
+
+    expect(plan.map((step) => step.name)).toContain('activity');
+    expect(plan.map((step) => step.name)).toContain('task');
+    expect(plan.map((step) => step.name)).toContain('siteVisit');
+    expect(plan.map((step) => step.name)).toContain('lead');
+
+    expect(plan.findIndex((step) => step.name === 'lead')).toBeGreaterThan(
+      plan.findIndex((step) => step.name === 'siteVisit'),
+    );
   });
 });

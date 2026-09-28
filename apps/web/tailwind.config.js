@@ -61,9 +61,25 @@ module.exports = {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        // Enterprise scale: small 4px, normal (controls/cards) 6px, large 8px
+        lg: "0.5rem",
+        md: "0.375rem",
+        sm: "0.25rem",
+      },
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+        xs: ["0.6875rem", { lineHeight: "1rem" }],
+        sm: ["0.8125rem", { lineHeight: "1.25rem" }],
+        base: ["0.8125rem", { lineHeight: "1.375rem" }],
+        lg: ["0.875rem", { lineHeight: "1.375rem" }],
+        xl: ["1.25rem", { lineHeight: "1.75rem" }],
+        "2xl": ["1.5rem", { lineHeight: "2rem" }],
+      },
+      height: {
+        control: "2.25rem",
+      },
+      minHeight: {
+        control: "2.25rem",
       },
       keyframes: {
         "accordion-down": {

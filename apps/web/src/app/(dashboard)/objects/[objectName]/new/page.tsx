@@ -76,7 +76,7 @@ export default function ObjectCreatePage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Create {metadata.label}</h1>
+          <h1 className="text-xl font-semibold">Create {metadata.label}</h1>
           <p className="text-muted-foreground">
             Add a new {metadata.label.toLowerCase()}
           </p>

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 import {
   getObjectDefinitions,
   getObjectDefinition,
@@ -34,7 +35,7 @@ router.get('/:name', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/', async (req: AuthRequest, res: Response) => {
+router.post('/', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const { name, label, pluralLabel, description, icon, isAvailableInNavigation, isAvailableInReports } = req.body;
 
@@ -128,7 +129,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.put('/:name', async (req: AuthRequest, res: Response) => {
+router.put('/:name', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const existing = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.name, mode: 'insensitive' } },
@@ -177,7 +178,7 @@ router.put('/:name', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.delete('/:name', async (req: AuthRequest, res: Response) => {
+router.delete('/:name', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const existing = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.name, mode: 'insensitive' } },

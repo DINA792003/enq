@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { X, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatCRMDate, formatCRMDateTime } from "@dct-crm/shared";
 import {
   Popover,
   PopoverContent,
@@ -75,11 +76,7 @@ function formatCurrency(value: number): string {
 function formatDate(dateStr: string): string {
   if (!dateStr) return "";
   try {
-    return new Date(dateStr).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+    return formatCRMDate(dateStr);
   } catch {
     return dateStr;
   }
@@ -88,13 +85,7 @@ function formatDate(dateStr: string): string {
 function formatDateTime(dateStr: string): string {
   if (!dateStr) return "";
   try {
-    return new Date(dateStr).toLocaleString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return formatCRMDateTime(dateStr);
   } catch {
     return dateStr;
   }
@@ -152,7 +143,7 @@ function LookupField({
         <div className="flex items-center">
           <Button
             variant="outline"
-            className="flex-1 justify-start text-left font-normal h-10 rounded-r-none"
+            className="h-9 flex-1 justify-start rounded-r-none text-left font-normal"
             disabled={disabled}
           >
             {selectedLabel || `Search ${field.label}...`}
@@ -162,7 +153,7 @@ function LookupField({
               type="button"
               variant="outline"
               size="icon"
-              className="h-10 w-10 shrink-0 rounded-l-none border-l-0"
+              className="h-9 w-9 shrink-0 rounded-l-none border-l-0"
               onClick={(e) => {
                 e.stopPropagation();
                 onChange(null);
@@ -179,7 +170,7 @@ function LookupField({
           <div className="flex items-center gap-2">
             <Search className="h-4 w-4 text-muted-foreground" />
             <input
-              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              className="h-9 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
               placeholder={`Search ${field.label}...`}
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
@@ -199,7 +190,7 @@ function LookupField({
             options.map((option) => (
               <button
                 key={option.id}
-                className="flex w-full items-center px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                className="flex w-full items-center px-3 py-2 text-[13px] hover:bg-accent hover:text-accent-foreground"
                 onClick={() => {
                   onChange(option.id);
                   setSelectedLabel(option.label);
@@ -551,29 +542,29 @@ export function FieldRenderer({
   if (readOnly) {
     return (
       <div className="space-y-1">
-        <Label className="text-sm font-medium text-muted-foreground">
+        <Label className="text-xs font-medium text-muted-foreground">
           {field.label}
           {field.required && <span className="text-destructive ml-1">*</span>}
         </Label>
-        <div className="text-sm font-medium py-2">
+        <div className="py-2 text-[13px] font-medium">
           {formatDisplayValue(value)}
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-[11px] text-destructive">{error}</p>}
       </div>
     );
   }
 
   return (
     <div className="space-y-1">
-      <Label htmlFor={field.name} className="text-sm font-medium">
+      <Label htmlFor={field.name} className="text-xs font-medium">
         {field.label}
         {field.required && <span className="text-destructive ml-1">*</span>}
       </Label>
       {field.description && (
-        <p className="text-xs text-muted-foreground">{field.description}</p>
+        <p className="text-[11px] text-muted-foreground">{field.description}</p>
       )}
       {renderField()}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
     </div>
   );
 }
@@ -638,10 +629,10 @@ export function FieldDisplay({
 
   return (
     <div className="space-y-1">
-      <Label className="text-sm font-medium text-muted-foreground">
+      <Label className="text-xs font-medium text-muted-foreground">
         {field.label}
       </Label>
-      <div className="text-sm font-medium py-1">
+      <div className="py-1 text-[13px] font-medium">
         {badge || formatDisplayValue(value)}
       </div>
     </div>

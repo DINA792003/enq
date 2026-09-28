@@ -32,7 +32,7 @@ export default function LoginPage() {
         throw new Error(data.error || 'Login failed');
       }
 
-      router.push('/dashboard');
+      router.push('/home');
       router.refresh();
     } catch (err: any) {
       setError(err.message || 'Login failed');
@@ -42,23 +42,23 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-background">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xl">DCT</span>
+            <div className="w-10 h-10 bg-blue-600 rounded-md flex items-center justify-center">
+              <span className="text-white font-bold text-base">DCT</span>
             </div>
           </div>
-          <CardTitle className="text-2xl text-center">DCT CRM</CardTitle>
-          <CardDescription className="text-center">
+          <CardTitle className="text-xl text-center">DCT CRM</CardTitle>
+          <CardDescription className="text-center text-[13px]">
             Enterprise Multi-Tenant CRM Platform
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3">
             {error && (
-              <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
+              <div className="p-2.5 text-[13px] text-red-600 bg-red-50 rounded-md">
                 {error}
               </div>
             )}
@@ -88,9 +88,9 @@ export default function LoginPage() {
               {loading ? 'Signing in...' : 'Sign In'}
             </Button>
           </form>
-          <div className="mt-4 text-center text-sm text-muted-foreground">
+          <div className="mt-4 text-center text-[13px] text-muted-foreground">
             <p>Demo Credentials:</p>
-            <p className="font-mono text-xs mt-1">admin@dctcrm.com / password123</p>
+            <p className="mt-1 font-mono text-xs">admin@dctcrm.com / password123</p>
           </div>
         </CardContent>
       </Card>

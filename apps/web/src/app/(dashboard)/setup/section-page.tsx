@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Settings } from "lucide-react";
 
@@ -28,7 +26,7 @@ export default function SetupSectionPage({
         <div className="mt-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Setup</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight">{title}</h1>
+            <h1 className="mt-1 text-xl font-semibold tracking-tight">{title}</h1>
             <p className="mt-2 max-w-2xl text-muted-foreground">{description}</p>
           </div>
           <Settings className="mt-1 h-8 w-8 text-muted-foreground" />

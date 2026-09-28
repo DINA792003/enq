@@ -9,7 +9,7 @@ const router = Router();
 
 router.use(authenticate);
 
-async function checkCapacityLimits(
+export async function checkCapacityLimits(
   tenantId: string,
   newProfileId?: string | null,
   excludeUserId?: string,
@@ -17,9 +17,19 @@ async function checkCapacityLimits(
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) return { allowed: true };
 
-  const activeUserCount = await prisma.user.count({
+  let activeUserCount = await prisma.user.count({
     where: { tenantId, isActive: true, isSuperAdmin: false },
   });
+
+  if (excludeUserId) {
+    const existingUser = await prisma.user.findFirst({
+      where: { id: excludeUserId, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (existingUser) {
+      activeUserCount -= 1;
+    }
+  }
 
   if (activeUserCount >= tenant.maxTotalUsers) {
     return { allowed: false, error: `Total user limit reached (${tenant.maxTotalUsers}/${tenant.maxTotalUsers}). Contact Super Admin to increase capacity.` };
@@ -28,7 +38,7 @@ async function checkCapacityLimits(
   if (newProfileId) {
     const profile = await prisma.profile.findUnique({ where: { id: newProfileId } });
     if (profile?.isAdmin) {
-      const adminCount = await prisma.user.count({
+      let adminCount = await prisma.user.count({
         where: {
           tenantId,
           isActive: true,
@@ -39,9 +49,14 @@ async function checkCapacityLimits(
 
       const isCurrentAdmin = excludeUserId
         ? await prisma.user.findFirst({
-            where: { id: excludeUserId, profileId: newProfileId },
+            where: { id: excludeUserId, tenantId, profileId: newProfileId, isActive: true },
+            select: { id: true },
           })
         : null;
+
+      if (excludeUserId && isCurrentAdmin) {
+        adminCount -= 1;
+      }
 
       if (!isCurrentAdmin && adminCount >= tenant.maxAdminUsers) {
         return { allowed: false, error: `Admin user limit reached (${tenant.maxAdminUsers}/${tenant.maxAdminUsers}). Contact Super Admin to increase capacity.` };
@@ -70,6 +85,7 @@ const updateUserSchema = z.object({
   avatar: z.string().optional(),
   profileId: z.string().nullable().optional(),
   roleId: z.string().nullable().optional(),
+  roleIds: z.array(z.string()).optional(),
 });
 
 const resetPasswordSchema = z.object({ password: z.string().min(8) });
@@ -228,6 +244,9 @@ router.post('/:id/impersonate', authorize('User', 'edit'), async (req: AuthReque
     });
     if (!target) return res.status(404).json({ success: false, error: 'Active user not found' });
     if (target.id === req.user!.id) return res.status(400).json({ success: false, error: 'You are already logged in as this user' });
+    if (target.isSuperAdmin && !administrator.isSuperAdmin) {
+      return res.status(403).json({ success: false, error: 'Only a Super Admin can log in as another Super Admin' });
+    }
 
     const { generateToken, setAuthCookie } = await import('../middleware/auth');
     setAuthCookie(res, generateToken({ ...target, impersonatedBy: req.user!.id }));
@@ -241,6 +260,16 @@ router.post('/:id/impersonate', authorize('User', 'edit'), async (req: AuthReque
 router.post('/', authorize('User', 'create'), async (req: AuthRequest, res: Response) => {
   try {
     const data = inviteUserSchema.parse(req.body);
+
+    if (data.profileId) {
+      const profile = await prisma.profile.findFirst({ where: { id: data.profileId, tenantId: req.tenantId! }, select: { id: true } });
+      if (!profile) return res.status(400).json({ success: false, error: 'Profile not found in this tenant' });
+    }
+    const roleIds = [...new Set([...(data.roleIds || []), ...(data.roleId ? [data.roleId] : [])])];
+    if (roleIds.length > 0) {
+      const roleCount = await prisma.role.count({ where: { id: { in: roleIds }, tenantId: req.tenantId! } });
+      if (roleCount !== roleIds.length) return res.status(400).json({ success: false, error: 'One or more roles were not found in this tenant' });
+    }
 
     const existingUser = await prisma.user.findFirst({
       where: { tenantId: req.tenantId!, email: data.email },
@@ -279,7 +308,7 @@ router.post('/', authorize('User', 'create'), async (req: AuthRequest, res: Resp
         profileId: data.profileId || undefined,
         roleId: data.roleId || undefined,
         roles: {
-          create: data.roleIds.map((roleId) => ({ roleId })),
+          create: roleIds.map((roleId) => ({ roleId })),
         },
       },
       select: {
@@ -333,6 +362,17 @@ router.put('/:id', authorize('User', 'edit'), async (req: AuthRequest, res: Resp
 
     const data = updateUserSchema.parse(req.body);
 
+    if (data.profileId) {
+      const profile = await prisma.profile.findFirst({ where: { id: data.profileId, tenantId: req.tenantId! }, select: { id: true } });
+      if (!profile) return res.status(400).json({ success: false, error: 'Profile not found in this tenant' });
+    }
+    const roleIds = data.roleIds ?? (data.roleId ? [data.roleId] : undefined);
+    if (roleIds) {
+      const uniqueRoleIds = [...new Set(roleIds)];
+      const roleCount = await prisma.role.count({ where: { id: { in: uniqueRoleIds }, tenantId: req.tenantId! } });
+      if (roleCount !== uniqueRoleIds.length) return res.status(400).json({ success: false, error: 'One or more roles were not found in this tenant' });
+    }
+
     if (data.profileId !== undefined && data.profileId !== existingUser.profileId) {
       const capacityCheck = await checkCapacityLimits(req.tenantId!, data.profileId, req.params.id);
       if (!capacityCheck.allowed) {
@@ -350,9 +390,11 @@ router.put('/:id', authorize('User', 'edit'), async (req: AuthRequest, res: Resp
       }
     }
 
+    const userData = { ...data };
+    delete userData.roleIds; // role assignments are handled via /api/roles endpoints, not the user update body
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data,
+      data: userData,
       select: {
         id: true,
         email: true,
@@ -366,6 +408,15 @@ router.put('/:id', authorize('User', 'edit'), async (req: AuthRequest, res: Resp
         profile: { select: { id: true, name: true } },
       },
     });
+
+    if (roleIds) {
+      await prisma.$transaction(async (tx) => {
+        await tx.userRole.deleteMany({ where: { userId: req.params.id } });
+        if (roleIds.length > 0) {
+          await tx.userRole.createMany({ data: [...new Set(roleIds)].map((roleId) => ({ userId: req.params.id, roleId })) });
+        }
+      });
+    }
 
     await prisma.auditLog.create({
       data: {
@@ -483,7 +534,10 @@ router.put('/:id/activate', authorize('User', 'edit'), async (req: AuthRequest, 
 
 router.put('/:id/roles', authorize('User', 'edit'), async (req: AuthRequest, res: Response) => {
   try {
-    const { roleIds } = req.body;
+    const roleIds: string[] | null = Array.isArray(req.body.roleIds)
+      ? [...new Set((req.body.roleIds as unknown[]).filter((id): id is string => typeof id === 'string'))]
+      : null;
+    if (roleIds === null) return res.status(400).json({ success: false, error: 'roleIds must be an array' });
 
     const existingUser = await prisma.user.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId! },
@@ -493,13 +547,17 @@ router.put('/:id/roles', authorize('User', 'edit'), async (req: AuthRequest, res
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    await prisma.userRole.deleteMany({ where: { userId: req.params.id } });
+    const roleCount = await prisma.role.count({ where: { id: { in: roleIds }, tenantId: req.tenantId! } });
+    if (roleCount !== roleIds.length) return res.status(400).json({ success: false, error: 'One or more roles were not found in this tenant' });
 
-    if (roleIds && roleIds.length > 0) {
-      await prisma.userRole.createMany({
-        data: roleIds.map((roleId: string) => ({ userId: req.params.id, roleId })),
-      });
-    }
+    await prisma.$transaction(async (tx) => {
+      await tx.userRole.deleteMany({ where: { userId: req.params.id } });
+      if (roleIds.length > 0) {
+        await tx.userRole.createMany({
+          data: roleIds.map((roleId) => ({ userId: req.params.id, roleId })),
+        });
+      }
+    });
 
     const user = await prisma.user.findUnique({
       where: { id: req.params.id },

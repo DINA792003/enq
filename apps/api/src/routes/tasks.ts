@@ -3,6 +3,13 @@ import { prisma } from '@dct-crm/db';
 import { taskSchema } from '@dct-crm/shared';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
+import {
+  applyScope,
+  canAccessLeadId,
+  canAccessTask,
+  getScopeClause,
+} from '../services/recordAccess';
+import { promoteNewLeadOnFirstActivity } from '../services/leadWorkflowExtras';
 
 const router = Router();
 
@@ -13,7 +20,7 @@ router.get('/', authorize('Task', 'read'), async (req: AuthRequest, res: Respons
     const { page = 1, limit = 20, status, priority, ownerId, leadId, search, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { tenantId: req.tenantId! };
+    let where: any = { tenantId: req.tenantId! };
     if (status) where.status = status;
     if (priority) where.priority = priority;
     if (ownerId) where.ownerId = ownerId;
@@ -24,6 +31,7 @@ router.get('/', authorize('Task', 'read'), async (req: AuthRequest, res: Respons
         { description: { contains: search as string, mode: 'insensitive' } },
       ];
     }
+    where = applyScope(where, await getScopeClause(req.user!, 'task'));
 
     const [tasks, total] = await Promise.all([
       prisma.task.findMany({
@@ -112,6 +120,10 @@ router.get('/:id', authorize('Task', 'read'), async (req: AuthRequest, res: Resp
       return res.status(404).json({ success: false, error: 'Task not found' });
     }
 
+    if (!(await canAccessTask(req.user!, task))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this task' });
+    }
+
     res.json({ success: true, data: task });
   } catch (error) {
     console.error('Get task error:', error);
@@ -123,35 +135,53 @@ router.post('/', authorize('Task', 'create'), async (req: AuthRequest, res: Resp
   try {
     const data = taskSchema.parse(req.body);
 
-    const task = await prisma.task.create({
-      data: {
-        tenantId: req.tenantId!,
-        ownerId: req.user!.id,
-        title: data.title,
-        description: data.description,
-        status: data.status || 'PENDING',
-        priority: data.priority || 'MEDIUM',
-        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-        leadId: data.leadId || undefined,
-        siteVisitId: data.siteVisitId || undefined,
-        opportunityId: data.opportunityId || undefined,
-      },
-      include: {
-        owner: { select: { id: true, firstName: true, lastName: true } },
-        lead: { select: { id: true, firstName: true, lastName: true } },
-      },
-    });
+    if (data.leadId && !(await canAccessLeadId(req.user!, data.leadId))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked lead' });
+    }
 
-    await prisma.auditLog.create({
-      data: {
-        tenantId: req.tenantId!,
-        userId: req.user!.id,
-        leadId: data.leadId || undefined,
-        action: 'TASK_CREATED',
-        objectType: 'Task',
-        objectId: task.id,
-        newValues: data,
-      },
+    const task = await prisma.$transaction(async (tx) => {
+      const created = await tx.task.create({
+        data: {
+          tenantId: req.tenantId!,
+          ownerId: req.user!.id,
+          title: data.title,
+          description: data.description,
+          status: data.status || 'PENDING',
+          priority: data.priority || 'MEDIUM',
+          dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+          leadId: data.leadId || undefined,
+          siteVisitId: data.siteVisitId || undefined,
+          opportunityId: data.opportunityId || undefined,
+        },
+        include: {
+          owner: { select: { id: true, firstName: true, lastName: true } },
+          lead: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      if (data.leadId) {
+        await promoteNewLeadOnFirstActivity(tx, {
+          tenantId: req.tenantId!,
+          leadId: data.leadId,
+          userId: req.user!.id,
+          profileName: req.user!.profileName,
+          activityLabel: 'Task',
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: req.tenantId!,
+          userId: req.user!.id,
+          leadId: data.leadId || undefined,
+          action: 'TASK_CREATED',
+          objectType: 'Task',
+          objectId: created.id,
+          newValues: data,
+        },
+      });
+
+      return created;
     });
 
     res.status(201).json({ success: true, data: task });
@@ -172,6 +202,10 @@ router.put('/:id', authorize('Task', 'edit'), async (req: AuthRequest, res: Resp
 
     if (!existingTask) {
       return res.status(404).json({ success: false, error: 'Task not found' });
+    }
+
+    if (!(await canAccessTask(req.user!, existingTask))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this task' });
     }
 
     const data = taskSchema.partial().parse(req.body);
@@ -222,6 +256,10 @@ router.delete('/:id', authorize('Task', 'delete'), async (req: AuthRequest, res:
       return res.status(404).json({ success: false, error: 'Task not found' });
     }
 
+    if (!(await canAccessTask(req.user!, task))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this task' });
+    }
+
     await prisma.task.delete({ where: { id: req.params.id } });
 
     await prisma.auditLog.create({
@@ -251,6 +289,10 @@ router.put('/:id/status', authorize('Task', 'edit'), async (req: AuthRequest, re
 
     if (!task) {
       return res.status(404).json({ success: false, error: 'Task not found' });
+    }
+
+    if (!(await canAccessTask(req.user!, task))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this task' });
     }
 
     const updateData: any = { status };
@@ -290,6 +332,10 @@ router.put('/:id/assign', authorize('Task', 'edit'), async (req: AuthRequest, re
 
     if (!task) {
       return res.status(404).json({ success: false, error: 'Task not found' });
+    }
+
+    if (!(await canAccessTask(req.user!, task))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this task' });
     }
 
     const updatedTask = await prisma.task.update({

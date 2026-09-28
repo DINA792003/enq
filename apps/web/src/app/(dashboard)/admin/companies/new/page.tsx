@@ -185,7 +185,7 @@ export default function CompanyFormPage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Create Company</h1>
+          <h1 className="text-xl font-semibold">Create Company</h1>
           <p className="text-muted-foreground">Add a new company to the platform</p>
         </div>
       </div>
@@ -259,7 +259,7 @@ export default function CompanyFormPage() {
                 value={form.name}
                 onChange={(e) => handleChange("name", e.target.value)}
                 placeholder="Acme Corporation"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               />
             </div>
@@ -270,7 +270,7 @@ export default function CompanyFormPage() {
                 value={form.companyCode}
                 onChange={(e) => handleChange("companyCode", e.target.value)}
                 placeholder="ACME-CORP"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                 required
               />
               <p className="text-xs text-muted-foreground">Unique identifier. Alphanumeric, hyphens, underscores only.</p>
@@ -282,7 +282,7 @@ export default function CompanyFormPage() {
                 value={form.email}
                 onChange={(e) => handleChange("email", e.target.value)}
                 placeholder="contact@acme.com"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               />
             </div>
@@ -293,7 +293,7 @@ export default function CompanyFormPage() {
                 value={form.phone}
                 onChange={(e) => handleChange("phone", e.target.value)}
                 placeholder="+1 234 567 890"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               />
             </div>
@@ -304,7 +304,7 @@ export default function CompanyFormPage() {
                 value={form.website}
                 onChange={(e) => handleChange("website", e.target.value)}
                 placeholder="https://acme.com"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
           </CardContent>
@@ -322,7 +322,7 @@ export default function CompanyFormPage() {
                 value={form.address}
                 onChange={(e) => handleChange("address", e.target.value)}
                 placeholder="123 Main Street"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -332,7 +332,7 @@ export default function CompanyFormPage() {
                 value={form.city}
                 onChange={(e) => handleChange("city", e.target.value)}
                 placeholder="New York"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -342,7 +342,7 @@ export default function CompanyFormPage() {
                 value={form.state}
                 onChange={(e) => handleChange("state", e.target.value)}
                 placeholder="New York"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -352,7 +352,7 @@ export default function CompanyFormPage() {
                 value={form.country}
                 onChange={(e) => handleChange("country", e.target.value)}
                 placeholder="United States"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -362,7 +362,7 @@ export default function CompanyFormPage() {
                 value={form.postalCode}
                 onChange={(e) => handleChange("postalCode", e.target.value)}
                 placeholder="10001"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
           </CardContent>
@@ -380,7 +380,7 @@ export default function CompanyFormPage() {
                 value={form.timezone}
                 onChange={(e) => handleChange("timezone", e.target.value)}
                 placeholder="America/New_York"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -390,7 +390,7 @@ export default function CompanyFormPage() {
                 value={form.currency}
                 onChange={(e) => handleChange("currency", e.target.value)}
                 placeholder="USD"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
@@ -417,7 +417,7 @@ export default function CompanyFormPage() {
                 type="date"
                 value={form.companyStartDate}
                 onChange={(e) => handleChange("companyStartDate", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
               <p className="text-xs text-muted-foreground">Date from which the company becomes active. Leave empty for immediate activation.</p>
             </div>
@@ -427,7 +427,7 @@ export default function CompanyFormPage() {
                 type="date"
                 value={form.companyExpiryDate}
                 onChange={(e) => handleChange("companyExpiryDate", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
               <p className="text-xs text-muted-foreground">Date until which the company is active. Leave empty for no expiry.</p>
             </div>
@@ -464,7 +464,7 @@ export default function CompanyFormPage() {
                       value={adminForm.username}
                       onChange={(e) => handleAdminChange("username", e.target.value)}
                       placeholder="admin_username"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
                   <div className="space-y-2">
@@ -474,7 +474,7 @@ export default function CompanyFormPage() {
                       value={adminForm.adminName}
                       onChange={(e) => handleAdminChange("adminName", e.target.value)}
                       placeholder="John Smith"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
@@ -484,7 +484,7 @@ export default function CompanyFormPage() {
                       value={adminForm.email}
                       onChange={(e) => handleAdminChange("email", e.target.value)}
                       placeholder="admin@company.com"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
                   <div className="space-y-2">
@@ -494,7 +494,7 @@ export default function CompanyFormPage() {
                       value={adminForm.password}
                       onChange={(e) => handleAdminChange("password", e.target.value)}
                       placeholder="Min 8 characters"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
                   <div className="space-y-2">
@@ -504,7 +504,7 @@ export default function CompanyFormPage() {
                       value={adminForm.confirmPassword}
                       onChange={(e) => handleAdminChange("confirmPassword", e.target.value)}
                       placeholder="Confirm password"
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
                 </div>

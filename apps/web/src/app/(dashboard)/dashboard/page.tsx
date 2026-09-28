@@ -1,20 +1,14 @@
 "use client";
 
-import { formatDate, formatDateTime } from "@/lib/date-format";
-
 import * as React from "react";
-
+import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
 import { Button } from "@/components/ui/button";
-
 import { Skeleton } from "@/components/ui/skeleton";
-
 import {
   KPICard,
   PipelineSummary,
 } from "@/components/crm/dashboard-widgets";
-
 import {
   Users,
   TrendingUp,
@@ -24,60 +18,59 @@ import {
   Plus,
   ArrowRight,
 } from "lucide-react";
-
 import Link from "next/link";
+import { analyticsApi, opportunityApi, taskApi, activityApi, homepageApi } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
 
-import { analyticsApi, opportunityApi, taskApi, activityApi } from "@/lib/api";
-
-function formatAmount(amount: number) {
-  if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(1)}Cr`;
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`;
-  return `₹${amount}`;
+interface HomepageWidgetLayout {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
-function getActivityTypeColor(type: string) {
-  switch (type?.toLowerCase()) {
-    case "call": return "bg-blue-100 text-blue-800";
-    case "meeting": return "bg-green-100 text-green-800";
-    case "email": return "bg-purple-100 text-purple-800";
-    case "note": return "bg-yellow-100 text-yellow-800";
-    default: return "bg-gray-100 text-gray-800";
-  }
-}
+const defaultHomeWidgetIds = [
+  "total-leads",
+  "opportunities",
+  "pipeline-value",
+  "active-tasks",
+  "recent-opportunities",
+  "pipeline-summary",
+  "upcoming-tasks",
+  "recent-activity",
+];
 
-function getPriorityColor(priority: string) {
-  switch (priority?.toLowerCase()) {
-    case "high":
-    case "urgent": return "bg-red-500";
-    case "medium": return "bg-yellow-500";
-    default: return "bg-green-500";
-  }
-}
+const isHomepageWidgetLayout = (item: unknown): item is HomepageWidgetLayout => {
+  if (typeof item !== "object" || item === null) return false;
+  if (!("id" in item) || !("x" in item) || !("y" in item) ||
+      !("width" in item) || !("height" in item)) return false;
 
-function formatTimeAgo(dateStr: string) {
-  if (!dateStr) return "";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
-}
+  return typeof item.id === "string" &&
+    defaultHomeWidgetIds.includes(item.id) &&
+    typeof item.x === "number" && Number.isFinite(item.x) &&
+    typeof item.y === "number" && Number.isFinite(item.y) &&
+    typeof item.width === "number" && Number.isFinite(item.width) &&
+    typeof item.height === "number" && Number.isFinite(item.height);
+};
 
-export default function DashboardPage() {
+export default function HomePage() {
+  const { user, isAdmin, isSuperAdmin } = useAuth();
+  const searchParams = useSearchParams();
+  const userName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || "User" : "User";
   const [kpis, setKpis] = React.useState<any[]>([]);
   const [pipelineStages, setPipelineStages] = React.useState<any[]>([]);
   const [recentOpportunities, setRecentOpportunities] = React.useState<any[]>([]);
   const [upcomingTasks, setUpcomingTasks] = React.useState<any[]>([]);
   const [recentActivities, setRecentActivities] = React.useState<any[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [homepageName, setHomepageName] = React.useState("Standard");
+  const [homepageLayouts, setHomepageLayouts] = React.useState<HomepageWidgetLayout[] | null>(null);
+  const requestedHomepageId = searchParams.get("homepage");
 
-  const fetchDashboardData = React.useCallback(async () => {
+  const fetchDashboardData = React.useCallback(async (homepageId: string | null) => {
     setIsLoading(true);
+
     try {
       const [leadsRes, oppRes, pipelineRes, tasksRes, activitiesRes, recentOppRes] = await Promise.allSettled([
         analyticsApi.getLeads(),
@@ -93,7 +86,6 @@ export default function DashboardPage() {
       const pipelineData = pipelineRes.status === 'fulfilled' ? pipelineRes.value.data?.data : null;
       const tasksData = tasksRes.status === 'fulfilled' ? tasksRes.value.data?.data : [];
       const activitiesData = activitiesRes.status === 'fulfilled' ? activitiesRes.value.data?.data : [];
-
       setKpis([
         {
           title: "Total Leads",
@@ -142,26 +134,126 @@ export default function DashboardPage() {
         setRecentActivities(activitiesData.slice(0, 4));
       }
     } catch (error) {
-      console.error("Failed to fetch dashboard data:", error);
+      console.error("Failed to fetch home data:", error);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   React.useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    void fetchDashboardData(requestedHomepageId);
+  }, [fetchDashboardData, requestedHomepageId]);
+
+  React.useEffect(() => {
+    let active = true;
+    const request = requestedHomepageId ? homepageApi.get(requestedHomepageId) : homepageApi.assigned();
+    request
+      .then((response) => {
+        if (!active) return;
+        const homepage = response.data?.data;
+        if (homepage) {
+          setHomepageName(homepage.name);
+          const layouts: HomepageWidgetLayout[] = Array.isArray(homepage.layout)
+            ? homepage.layout.filter(isHomepageWidgetLayout)
+            : [];
+          setHomepageLayouts(layouts.length ? layouts : null);
+        } else {
+          setHomepageName("Standard");
+          setHomepageLayouts(null);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setHomepageName("Standard");
+          setHomepageLayouts(null);
+        }
+      });
+    return () => { active = false; };
+  }, [requestedHomepageId]);
+
+
+  const formatAmount = (amount: number) => {
+    if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(1)}Cr`;
+    if (amount >= 100000) return `₹${(amount / 100000).toFixed(1)}L`;
+    if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`;
+    return `₹${amount}`;
+  };
+
+  const getActivityTypeColor = (type: string) => {
+    switch (type?.toLowerCase()) {
+      case "call": return "bg-blue-100 text-blue-800";
+      case "meeting": return "bg-green-100 text-green-800";
+      case "email": return "bg-purple-100 text-purple-800";
+      case "note": return "bg-yellow-100 text-yellow-800";
+      default: return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority?.toLowerCase()) {
+      case "high":
+      case "urgent": return "bg-red-500";
+      case "medium": return "bg-yellow-500";
+      default: return "bg-green-500";
+    }
+  };
+
+  const formatTimeAgo = (dateStr: string) => {
+    if (!dateStr) return "";
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  const hasSelectedHomepage = Boolean(requestedHomepageId && homepageName && homepageName !== "Standard");
+  const pageTitle = hasSelectedHomepage ? homepageName : `Welcome ${userName}`;
+  const hasCustomLayout = Boolean(homepageLayouts?.length);
+  const showsWidget = (widgetId: string) =>
+    !homepageLayouts || homepageLayouts.some((layout) => layout.id === widgetId);
+  const getWidgetLayout = (widgetId: string) =>
+    homepageLayouts?.find((layout) => layout.id === widgetId);
+  const widgetStyle = (widgetId: string): React.CSSProperties => {
+    const layout = getWidgetLayout(widgetId);
+    return layout
+      ? {
+          position: "absolute",
+          left: layout.x,
+          top: layout.y,
+          width: layout.width,
+          height: layout.height,
+        }
+      : {};
+  };
+  const customCanvasHeight = homepageLayouts?.reduce(
+    (height, layout) => Math.max(height, layout.y + layout.height + 24),
+    720,
+  ) ?? 0;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Executive Dashboard</h1>
-          <p className="text-muted-foreground">
-            Welcome back! Here&apos;s what&apos;s happening today.
-          </p>
+      <div className="flex items-center justify-between rounded-lg border bg-muted/30 px-4 py-5 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white border shadow-sm text-xl font-bold text-slate-700">
+            {userName.split(" ").map((part) => part[0] || "").join("").slice(0, 2).toUpperCase() || "U"}
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">{pageTitle}</h1>
+          </div>
         </div>
         <div className="flex gap-2">
+          {isSuperAdmin && (
+            <Button variant="outline" asChild>
+              <Link href="/admin/customize-home/create">
+                Add Component
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" asChild>
             <Link href="/reports">
               View Reports
@@ -176,8 +268,19 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {isLoading
+      <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground">
+        <p>Here&apos;s what&apos;s happening today.</p>
+        <div className="rounded-md border bg-white px-3 py-2 font-medium text-slate-700">
+          {homepageName}
+        </div>
+      </div>
+
+      <div
+        className={hasCustomLayout ? "relative min-h-0" : "space-y-6"}
+        style={hasCustomLayout ? { minHeight: customCanvasHeight } : undefined}
+      >
+      <div className={hasCustomLayout ? "contents" : "grid gap-4 md:grid-cols-2 lg:grid-cols-4"}>
+          {isLoading
           ? Array.from({ length: 4 }).map((_, i) => (
               <Card key={i}>
                 <CardContent className="p-6">
@@ -186,13 +289,34 @@ export default function DashboardPage() {
                 </CardContent>
               </Card>
             ))
-          : kpis.map((kpi) => (
-              <KPICard key={kpi.title} {...kpi} />
-            ))}
+          : kpis.filter((kpi) => {
+              const widgetIds: Record<string, string> = {
+                "Total Leads": "total-leads",
+                Opportunities: "opportunities",
+                "Pipeline Value": "pipeline-value",
+                "Active Tasks": "active-tasks",
+              };
+              return showsWidget(widgetIds[kpi.title]);
+            }).map((kpi) => {
+              const widgetIds: Record<string, string> = {
+                "Total Leads": "total-leads",
+                Opportunities: "opportunities",
+                "Pipeline Value": "pipeline-value",
+                "Active Tasks": "active-tasks",
+              };
+              const widgetId = widgetIds[kpi.title];
+              return <div
+                key={kpi.title}
+                className={hasCustomLayout ? "absolute h-full [&>*]:h-full" : ""}
+                style={hasCustomLayout ? widgetStyle(widgetId) : undefined}
+              >
+                <KPICard {...kpi} />
+              </div>;
+            })}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      {(showsWidget("recent-opportunities") || showsWidget("pipeline-summary")) && <div className={hasCustomLayout ? "contents" : "grid gap-6 lg:grid-cols-3"}>
+        {showsWidget("recent-opportunities") && <div className={hasCustomLayout ? "absolute" : "lg:col-span-2"} style={widgetStyle("recent-opportunities")}>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Recent Opportunities</CardTitle>
@@ -232,27 +356,21 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </div>}
 
-        <div className="space-y-6">
-          {isLoading ? (
-            <Skeleton className="h-48 w-full" />
-          ) : pipelineStages.length > 0 ? (
-            <PipelineSummary stages={pipelineStages} />
-          ) : (
-            <Card>
-              <CardContent className="p-6 text-center text-muted-foreground text-sm">
-                No pipeline data
-              </CardContent>
-            </Card>
-          )}
+        {showsWidget("pipeline-summary") && <div className={hasCustomLayout ? "absolute h-full" : ""} style={widgetStyle("pipeline-summary")}>
+          <PipelineSummary stages={pipelineStages} />
+        </div>}
+      </div>}
 
+      {(showsWidget("upcoming-tasks") || showsWidget("recent-activity")) && <div className={hasCustomLayout ? "contents" : "grid gap-6 lg:grid-cols-3"}>
+        {showsWidget("upcoming-tasks") && <div className={hasCustomLayout ? "absolute" : "lg:col-span-2"} style={widgetStyle("upcoming-tasks")}>
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Recent Activity</CardTitle>
-              <Button variant="ghost" size="sm" asChild>
-                <Link href="/tasks">View All</Link>
-              </Button>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Upcoming Tasks</CardTitle>
+              <Link href="/tasks" className="text-sm text-primary hover:underline">
+                View All
+              </Link>
             </CardHeader>
             <CardContent>
               {isLoading ? (
@@ -261,18 +379,21 @@ export default function DashboardPage() {
                     <Skeleton key={i} className="h-12 w-full" />
                   ))}
                 </div>
-              ) : recentActivities.length === 0 ? (
-                <p className="text-muted-foreground text-sm text-center">No recent activity</p>
+              ) : upcomingTasks.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-4 text-center">No upcoming tasks</p>
               ) : (
                 <div className="space-y-3">
-                  {recentActivities.map((activity: any) => (
-                    <div key={activity.id} className="flex items-start gap-3 p-2 rounded-lg">
-                      <div className={`mt-0.5 p-1.5 rounded-md text-xs ${getActivityTypeColor(activity.type)}`}>
-                        {activity.type?.charAt(0)?.toUpperCase() || "N"}
+                  {upcomingTasks.map((task: any) => (
+                    <div key={task.id} className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="font-medium">{task.title || "Untitled task"}</p>
+                        <p className="text-sm text-muted-foreground">{task.assigneeName || "Unassigned"}</p>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{activity.subject || "Activity"}</p>
-                        <p className="text-xs text-muted-foreground">{formatTimeAgo(activity.createdAt)}</p>
+                      <div className="text-right">
+                        <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getPriorityColor(task.priority || "low")}`}>
+                          {task.priority || "Low"}
+                        </span>
+                        <p className="text-sm text-muted-foreground mt-1">{task.dueDate ? formatTimeAgo(task.dueDate) : "No due date"}</p>
                       </div>
                     </div>
                   ))}
@@ -280,82 +401,41 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </div>}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Upcoming Tasks</CardTitle>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/tasks">
-                View All
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : upcomingTasks.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-4">No upcoming tasks</p>
-            ) : (
-              <div className="space-y-3">
-                {upcomingTasks.map((task: any) => (
-                  <div key={task.id} className="flex items-center justify-between p-3 rounded-lg border">
-                    <div className="flex items-center gap-3">
-                      <div className={`h-2 w-2 rounded-full ${getPriorityColor(task.priority)}`} />
-                      <Link href={`/tasks/${task.id}`} className="text-sm hover:underline">
-                        {task.title}
-                      </Link>
+        {showsWidget("recent-activity") && <div className={hasCustomLayout ? "absolute h-full" : ""} style={widgetStyle("recent-activity")}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Recent Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : recentActivities.length === 0 ? (
+                <p className="text-muted-foreground text-sm py-4 text-center">No recent activity</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentActivities.map((activity: any) => (
+                    <div key={activity.id} className="flex items-center gap-3 rounded-lg border p-3">
+                      <div className={`h-2.5 w-2.5 rounded-full ${getActivityTypeColor(activity.type)}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">{activity.message || "Activity"}</p>
+                        <p className="text-xs text-muted-foreground">{activity.type || "Update"}</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground whitespace-nowrap">{activity.createdAt ? formatTimeAgo(activity.createdAt) : "Now"}</p>
                     </div>
-                    <span className="text-sm text-muted-foreground">
-                      {task.dueDate ? formatDate(task.dueDate) : "No due date"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>}
+      </div>}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" className="h-20 flex-col gap-2" asChild>
-                <Link href="/leads/new">
-                  <Users className="h-5 w-5" />
-                  <span>Add Lead</span>
-                </Link>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" asChild>
-                <Link href="/site-visits">
-                  <Calendar className="h-5 w-5" />
-                  <span>Schedule Visit</span>
-                </Link>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" asChild>
-                <Link href="/quotations">
-                  <FileText className="h-5 w-5" />
-                  <span>Create Quote</span>
-                </Link>
-              </Button>
-              <Button variant="outline" className="h-20 flex-col gap-2" asChild>
-                <Link href="/opportunities">
-                  <TrendingUp className="h-5 w-5" />
-                  <span>New Opportunity</span>
-                </Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );

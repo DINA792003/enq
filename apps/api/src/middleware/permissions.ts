@@ -9,14 +9,15 @@ export const requirePermission = (permissionName: string) => {
         return res.status(401).json({ success: false, error: 'Authentication required' });
       }
 
-      if (req.user.isSuperAdmin || req.user.isAdmin) {
+      if (req.user.isSuperAdmin) {
         return next();
       }
 
-      const result = await EffectivePermissionService.requirePermission(req.user.id, permissionName);
+      const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user, req.user.id);
+      const allowed = EffectivePermissionService.hasPermissionIn(perms, permissionName);
 
-      if (!result.allowed) {
-        return res.status(403).json({ success: false, error: result.error });
+      if (!allowed) {
+        return res.status(403).json({ success: false, error: `Permission denied: ${permissionName} required` });
       }
 
       next();
@@ -34,11 +35,14 @@ export const requireAnyPermission = (permissionNames: string[]) => {
         return res.status(401).json({ success: false, error: 'Authentication required' });
       }
 
-      if (req.user.isSuperAdmin || req.user.isAdmin) {
+      if (req.user.isSuperAdmin) {
         return next();
       }
 
-      const has = await EffectivePermissionService.hasAnyPermission(req.user.id, permissionNames);
+      const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user, req.user.id);
+      const has =
+        perms.some((p) => p.name === 'FULL_SYSTEM_ACCESS') ||
+        permissionNames.some((name) => perms.some((p) => p.name === name));
 
       if (!has) {
         return res.status(403).json({
@@ -58,7 +62,7 @@ export const requireAnyPermission = (permissionNames: string[]) => {
 export const loadEffectivePermissions = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (req.user) {
-      req.effectivePermissions = await EffectivePermissionService.getEffectivePermissions(req.user.id);
+      req.effectivePermissions = await EffectivePermissionService.getEffectivePermissionsCached(req.user, req.user.id);
     }
   } catch (error) {
     console.error('Failed to load effective permissions:', error);

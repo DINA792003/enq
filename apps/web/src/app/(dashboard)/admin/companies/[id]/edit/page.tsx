@@ -192,7 +192,7 @@ export default function CompanyEditPage() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Edit Company</h1>
+          <h1 className="text-xl font-semibold">Edit Company</h1>
           <p className="text-muted-foreground">{form.name}</p>
         </div>
       </div>
@@ -264,7 +264,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.name}
                 onChange={(e) => handleChange("name", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               />
             </div>
@@ -274,7 +274,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.companyCode}
                 onChange={(e) => handleChange("companyCode", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                 required
               />
             </div>
@@ -284,7 +284,7 @@ export default function CompanyEditPage() {
                 type="email"
                 value={form.email}
                 onChange={(e) => handleChange("email", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               />
             </div>
@@ -294,7 +294,7 @@ export default function CompanyEditPage() {
                 type="tel"
                 value={form.phone}
                 onChange={(e) => handleChange("phone", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               />
             </div>
@@ -304,7 +304,7 @@ export default function CompanyEditPage() {
                 type="url"
                 value={form.website}
                 onChange={(e) => handleChange("website", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 required
               />
             </div>
@@ -322,7 +322,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.address}
                 onChange={(e) => handleChange("address", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -331,7 +331,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.city}
                 onChange={(e) => handleChange("city", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -340,7 +340,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.state}
                 onChange={(e) => handleChange("state", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -349,7 +349,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.country}
                 onChange={(e) => handleChange("country", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -358,7 +358,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.postalCode}
                 onChange={(e) => handleChange("postalCode", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
           </CardContent>
@@ -375,7 +375,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.timezone}
                 onChange={(e) => handleChange("timezone", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2">
@@ -384,7 +384,7 @@ export default function CompanyEditPage() {
                 type="text"
                 value={form.currency}
                 onChange={(e) => handleChange("currency", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
@@ -410,7 +410,7 @@ export default function CompanyEditPage() {
                 type="date"
                 value={form.companyStartDate}
                 onChange={(e) => handleChange("companyStartDate", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
               <p className="text-xs text-muted-foreground">Date from which the company becomes active. Leave empty for immediate activation.</p>
             </div>
@@ -420,7 +420,7 @@ export default function CompanyEditPage() {
                 type="date"
                 value={form.companyExpiryDate}
                 onChange={(e) => handleChange("companyExpiryDate", e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
               <p className="text-xs text-muted-foreground">Date until which the company is active. Leave empty for no expiry.</p>
             </div>

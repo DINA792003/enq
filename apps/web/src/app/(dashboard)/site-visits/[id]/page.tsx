@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDate, formatDateTime } from "@/lib/date-format";
+import { crmDateTimeInputValue, crmLocalDateTimeToDate } from "@dct-crm/shared";
 
 import * as React from "react";
 
@@ -11,6 +12,7 @@ import Link from "next/link";
 import { siteVisitApi } from "@/lib/api";
 
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
 
 import { Badge } from "@/components/ui/badge";
 
@@ -23,6 +25,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 
 import {
   ArrowLeft,
@@ -39,67 +45,183 @@ import {
 
 interface SiteVisitData {
   id: string;
-  leadName: string;
-  projectName: string;
-  visitDate: string;
+  siteVisitNumber?: string | null;
   status: string;
-  assignedTo: string;
-  feedback?: string;
+  scheduledAt?: string;
+  notes?: string;
+  feedback?: string | null;
+  customerFeedback?: string | null;
+  completionNotes?: string | null;
+  completedAt?: string | null;
+  completedBy?: { id: string; firstName: string; lastName: string; profile?: { name: string } | null } | null;
+  cancellationReason?: string | null;
+  cancelledAt?: string | null;
+  cancelledBy?: { id: string; firstName: string; lastName: string; profile?: { name: string } | null } | null;
+  rating?: number | null;
   createdAt: string;
   updatedAt: string;
+  lead?: { id: string; leadNumber?: string | null; firstName: string; lastName: string; phone?: string | null; company?: string | null; email?: string | null; status?: string; owner?: { firstName: string; lastName: string; email?: string | null; profile?: { name: string } | null } | null };
+  leadName?: string;
+  project?: { id: string; name: string };
+  projectName?: string;
+  assignee?: { id: string; firstName: string; lastName: string };
+  creator?: { id: string; firstName: string; lastName: string; email?: string; profile?: { name: string } | null };
+  assignedTo?: string;
+  visitDate?: string;
+  previousSiteVisitId?: string | null;
+  previousSiteVisit?: { id: string; siteVisitNumber?: string | null; status?: string; scheduledAt?: string } | null;
 }
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline" | "success" | "warning" | "info"> = {
-  scheduled: "info",
-  completed: "success",
-  cancelled: "destructive",
-  rescheduled: "warning",
+  SCHEDULED: "info",
+  COMPLETED: "success",
+  CANCELLED: "destructive",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  scheduled: "Scheduled",
-  completed: "Completed",
-  cancelled: "Cancelled",
-  rescheduled: "Rescheduled",
+  SCHEDULED: "Scheduled",
+  COMPLETED: "Completed",
+  CANCELLED: "Cancelled",
 };
+
+const normalizeStatus = (status: string) => {
+  const upper = String(status || "").toUpperCase();
+  if (upper === "RESCHEDULED") return "SCHEDULED";
+  if (["SCHEDULED", "COMPLETED", "CANCELLED"].includes(upper)) return upper;
+  return upper || "SCHEDULED";
+};
+
+const deriveLeadName = (sv: SiteVisitData) =>
+  sv.leadName ||
+  (sv.lead ? `${sv.lead.firstName} ${sv.lead.lastName}`.trim() : "—");
+
+const deriveProjectName = (sv: SiteVisitData) =>
+  sv.projectName || sv.project?.name || "N/A";
+
+const deriveAssignedTo = (sv: SiteVisitData) =>
+  sv.assignedTo ||
+  (sv.assignee ? `${sv.assignee.firstName} ${sv.assignee.lastName}`.trim() : "Unassigned");
+
+const deriveVisitDate = (sv: SiteVisitData) =>
+  sv.visitDate || sv.scheduledAt || sv.createdAt;
 
 export default function SiteVisitDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { toast } = useToast();
+  const { user, profile } = useAuth();
   const [siteVisit, setSiteVisit] = React.useState<SiteVisitData | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [activeTab, setActiveTab] = React.useState("details");
+  const [isActionLoading, setIsActionLoading] = React.useState(false);
+  const [cancelDialogOpen, setCancelDialogOpen] = React.useState(false);
+  const [cancelReason, setCancelReason] = React.useState("");
+  const [completeDialogOpen, setCompleteDialogOpen] = React.useState(false);
+  const [completionTime, setCompletionTime] = React.useState("");
+  const [customerFeedback, setCustomerFeedback] = React.useState("");
+  const [completionNotes, setCompletionNotes] = React.useState("");
+  const [revisitDialogOpen, setRevisitDialogOpen] = React.useState(false);
+  const [revisitReason, setRevisitReason] = React.useState("");
+  const [revisitDate, setRevisitDate] = React.useState("");
+  const [revisitTime, setRevisitTime] = React.useState("");
 
-  React.useEffect(() => {
-    const fetchSiteVisit = async () => {
-      try {
-        setIsLoading(true);
-        const res = await siteVisitApi.get(params.id as string);
-        if (res.data.success && res.data.data) {
-          setSiteVisit(res.data.data);
-        } else {
-          toast({ title: "Error", description: "Site visit not found", variant: "destructive" as any });
-          router.push("/site-visits");
-        }
-      } catch {
-        toast({ title: "Error", description: "Failed to load site visit", variant: "destructive" as any });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchSiteVisit();
-  }, [params.id, router, toast]);
-
-  const handleStatusUpdate = async (newStatus: string) => {
+  const fetchSiteVisit = React.useCallback(async () => {
     try {
-      const res = await siteVisitApi.updateStatus(params.id as string, newStatus);
-      if (res.data.success) {
-        toast({ title: "Success", description: `Status updated to ${STATUS_LABEL[newStatus] || newStatus}` });
-        setSiteVisit((prev) => (prev ? { ...prev, status: newStatus } : prev));
+      setIsLoading(true);
+      const res = await siteVisitApi.get(params.id as string);
+      if (res.data.success && res.data.data) {
+        setSiteVisit(res.data.data);
+      } else {
+        toast({ title: "Error", description: "Site visit not found", variant: "destructive" as any });
+        router.push("/site-visits");
       }
     } catch {
-      toast({ title: "Error", description: "Failed to update status", variant: "destructive" as any });
+      toast({ title: "Error", description: "Failed to load site visit", variant: "destructive" as any });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [params.id, router, toast]);
+
+  React.useEffect(() => {
+    fetchSiteVisit();
+  }, [fetchSiteVisit]);
+
+  const handleComplete = async () => {
+    if (!completionTime || !customerFeedback.trim() || !completionNotes.trim()) {
+      toast({ title: "Validation", description: "Completion time, customer feedback, and notes are required", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      const res = await siteVisitApi.complete(params.id as string, {
+        completedAt: crmLocalDateTimeToDate(completionTime.split("T")[0], completionTime.split("T")[1]).toISOString(),
+        customerFeedback: customerFeedback.trim(),
+        completionNotes: completionNotes.trim(),
+      });
+      if (res.data.success) {
+        toast({ title: "Success", description: "Site visit marked as happened" });
+        setCompleteDialogOpen(false);
+        await fetchSiteVisit();
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to complete site visit", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!cancelReason.trim()) {
+      toast({ title: "Validation", description: "A reason is required to cancel", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      const res = await siteVisitApi.cancel(params.id as string, cancelReason.trim());
+      if (res.data.success) {
+        toast({ title: "Success", description: "Site visit cancelled" });
+        setCancelDialogOpen(false);
+        setCancelReason("");
+        await fetchSiteVisit();
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to cancel site visit", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleRevisit = async () => {
+    if (!revisitReason.trim() || !revisitDate || !revisitTime) {
+      toast({ title: "Validation", description: "A reason is required for revisit", variant: "destructive" as any });
+      return;
+    }
+    const projectId = siteVisit?.project?.id;
+    if (!projectId) {
+      toast({ title: "Error", description: "No project found on this site visit", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      const scheduledAt = crmLocalDateTimeToDate(revisitDate, revisitTime).toISOString();
+      const res = await siteVisitApi.revisit(params.id as string, {
+        reason: revisitReason.trim(),
+        scheduledAt,
+        projectId,
+        notes: revisitReason.trim(),
+      });
+      if (res.data.success) {
+        toast({ title: "Success", description: "Revisit site visit created" });
+        setRevisitDialogOpen(false);
+        setRevisitReason("");
+        setRevisitDate("");
+        setRevisitTime("");
+        await fetchSiteVisit();
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to create revisit", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
     }
   };
 
@@ -128,6 +250,12 @@ export default function SiteVisitDetailPage() {
 
   if (!siteVisit) return null;
 
+  const status = normalizeStatus(siteVisit.status);
+  const leadName = deriveLeadName(siteVisit);
+  const projectName = deriveProjectName(siteVisit);
+  const assignedTo = deriveAssignedTo(siteVisit);
+  const visitDate = deriveVisitDate(siteVisit);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -138,27 +266,37 @@ export default function SiteVisitDetailPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Site Visit - {siteVisit.leadName}</h1>
-            <p className="text-muted-foreground">Site Visit #{siteVisit.id}</p>
+            <h1 className="text-xl font-semibold">Site Visit - {leadName}</h1>
+            <p className="text-muted-foreground">
+              {siteVisit.siteVisitNumber ? `Site Visit ${siteVisit.siteVisitNumber}` : `Site Visit #${siteVisit.id.slice(-8).toUpperCase()}`}
+            </p>
           </div>
         </div>
         <div className="flex gap-2">
-          {siteVisit.status === "scheduled" && (
+          {status === "SCHEDULED" && (
             <>
-              <Button onClick={() => handleStatusUpdate("completed")}>
+              <Button onClick={() => {
+                setCompletionTime(crmDateTimeInputValue());
+                setCustomerFeedback("");
+                setCompletionNotes("");
+                setCompleteDialogOpen(true);
+              }} disabled={isActionLoading}>
                 <CheckCircle2 className="mr-2 h-4 w-4" />
                 Mark Completed
               </Button>
-              <Button variant="outline" onClick={() => handleStatusUpdate("rescheduled")}>
+              <Button variant="outline" onClick={() => setRevisitDialogOpen(true)} disabled={isActionLoading}>
                 <Clock className="mr-2 h-4 w-4" />
-                Reschedule
+                Revisit
+              </Button>
+              <Button variant="destructive" onClick={() => setCancelDialogOpen(true)} disabled={isActionLoading}>
+                Cancel Site Visit
               </Button>
             </>
           )}
-          {siteVisit.status === "rescheduled" && (
-            <Button onClick={() => handleStatusUpdate("completed")}>
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-              Mark Completed
+          {status === "COMPLETED" && (
+            <Button variant="outline" onClick={() => setRevisitDialogOpen(true)} disabled={isActionLoading}>
+              <Clock className="mr-2 h-4 w-4" />
+              Revisit
             </Button>
           )}
         </div>
@@ -173,8 +311,8 @@ export default function SiteVisitDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Status</p>
-                <Badge variant={STATUS_VARIANT[siteVisit.status] || "default"}>
-                  {STATUS_LABEL[siteVisit.status] || siteVisit.status}
+                <Badge variant={STATUS_VARIANT[status] || "default"}>
+                  {STATUS_LABEL[status] || status}
                 </Badge>
               </div>
             </div>
@@ -189,11 +327,7 @@ export default function SiteVisitDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Visit Date</p>
                 <p className="text-sm font-medium">
-                  {new Date(siteVisit.visitDate).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  {formatDate(visitDate)}
                 </p>
               </div>
             </div>
@@ -207,7 +341,7 @@ export default function SiteVisitDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Assigned To</p>
-                <p className="text-sm font-medium">{siteVisit.assignedTo || "Unassigned"}</p>
+                <p className="text-sm font-medium">{assignedTo}</p>
               </div>
             </div>
           </CardContent>
@@ -220,7 +354,7 @@ export default function SiteVisitDetailPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Project</p>
-                <p className="text-sm font-medium">{siteVisit.projectName || "N/A"}</p>
+                <p className="text-sm font-medium">{projectName}</p>
               </div>
             </div>
           </CardContent>
@@ -253,24 +387,64 @@ export default function SiteVisitDetailPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Site Visit Number</span>
+                  <span className="text-sm font-medium font-mono">{siteVisit.siteVisitNumber || "—"}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Lead Name</span>
-                  <span className="text-sm font-medium">{siteVisit.leadName}</span>
+                  <span className="text-sm font-medium">{leadName}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Lead Number</span>
+                  <span className="text-sm font-medium font-mono">{siteVisit.lead?.leadNumber || "—"}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Phone</span>
+                  <span className="text-sm font-medium">{siteVisit.lead?.phone || "—"}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Company</span>
+                  <span className="text-sm font-medium">{siteVisit.lead?.company || "—"}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Email</span>
+                  <span className="text-sm font-medium">{siteVisit.lead?.email || "—"}</span>
                 </div>
                 <Separator />
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Project</span>
-                  <span className="text-sm font-medium">{siteVisit.projectName || "N/A"}</span>
+                  <span className="text-sm font-medium">{projectName}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Assigned To</span>
-                  <span className="text-sm font-medium">{siteVisit.assignedTo || "Unassigned"}</span>
+                  <span className="text-sm font-medium">{assignedTo}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Status</span>
-                  <Badge variant={STATUS_VARIANT[siteVisit.status] || "default"}>
-                    {STATUS_LABEL[siteVisit.status] || siteVisit.status}
+                  <Badge variant={STATUS_VARIANT[status] || "default"}>
+                    {STATUS_LABEL[status] || status}
                   </Badge>
                 </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Created By</span>
+                  <span className="text-sm font-medium">
+                    {siteVisit.creator
+                      ? `${siteVisit.creator.firstName} ${siteVisit.creator.lastName}${siteVisit.creator.profile?.name ? ` (${siteVisit.creator.profile.name})` : ""}`
+                      : "—"}
+                  </span>
+                </div>
+                {siteVisit.previousSiteVisit && (
+                  <>
+                    <Separator />
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Previous Visit</span>
+                      <span className="text-sm font-medium font-mono">
+                        {siteVisit.previousSiteVisit.siteVisitNumber || siteVisit.previousSiteVisit.id.slice(-8).toUpperCase()}
+                      </span>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -286,7 +460,7 @@ export default function SiteVisitDetailPage() {
                   <div>
                     <p className="text-sm font-medium">Visit Date</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatDate(siteVisit.visitDate)}
+                      {formatDate(visitDate)}
                     </p>
                   </div>
                 </div>
@@ -295,7 +469,25 @@ export default function SiteVisitDetailPage() {
                   <div>
                     <p className="text-sm font-medium">Created</p>
                     <p className="text-xs text-muted-foreground">
-                      {formatDate(siteVisit.createdAt)}
+                      {formatDateTime(siteVisit.createdAt)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Last Updated</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDateTime(siteVisit.updatedAt)}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Notes</p>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+                      {siteVisit.notes || "—"}
                     </p>
                   </div>
                 </div>
@@ -333,11 +525,103 @@ export default function SiteVisitDetailPage() {
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
               <StickyNote className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>No notes added</p>
+              <p>{siteVisit.notes || "No notes added"}</p>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Site Visit</DialogTitle>
+            <DialogDescription>A cancellation reason is required.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="site-visit-cancel-reason">Reason *</Label>
+            <Textarea id="site-visit-cancel-reason" value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelDialogOpen(false)} disabled={isActionLoading}>Close</Button>
+            <Button variant="destructive" onClick={handleCancel} disabled={isActionLoading || !cancelReason.trim()}>
+              {isActionLoading ? "Cancelling..." : "Cancel Site Visit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={completeDialogOpen} onOpenChange={setCompleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete Site Visit</DialogTitle>
+            <DialogDescription>Completion time, customer feedback, and notes are required.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="site-visit-completion-time">Completion Time *</Label>
+              <Input id="site-visit-completion-time" type="datetime-local" value={completionTime} onChange={(event) => setCompletionTime(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-visit-customer-feedback">Customer Feedback *</Label>
+              <Textarea id="site-visit-customer-feedback" value={customerFeedback} onChange={(event) => setCustomerFeedback(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-visit-completion-notes">Notes *</Label>
+              <Textarea id="site-visit-completion-notes" value={completionNotes} onChange={(event) => setCompletionNotes(event.target.value)} />
+            </div>
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <p className="font-medium">Completed By</p>
+              <p className="text-muted-foreground">{user ? `${user.firstName} ${user.lastName}` : "Authenticated user"}</p>
+              <p className="text-muted-foreground">{profile?.name || "Current profile"}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCompleteDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
+            <Button onClick={handleComplete} disabled={isActionLoading || !completionTime || !customerFeedback.trim() || !completionNotes.trim()}>
+              {isActionLoading ? "Completing..." : "Complete Site Visit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={revisitDialogOpen} onOpenChange={setRevisitDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Revisit Site Visit</DialogTitle>
+            <DialogDescription>Project, note/reason, date, and time are required.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <p><strong>Lead Number:</strong> {siteVisit.lead?.leadNumber || "—"}</p>
+              <p><strong>Lead Name:</strong> {leadName}</p>
+              <p><strong>Phone:</strong> {siteVisit.lead?.phone || "—"}</p>
+              <p><strong>Company:</strong> {siteVisit.lead?.company || "—"}</p>
+              <p><strong>Email:</strong> {siteVisit.lead?.email || "—"}</p>
+              <p><strong>Project:</strong> {projectName}</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="site-visit-revisit-reason">Note / Reason *</Label>
+              <Textarea id="site-visit-revisit-reason" value={revisitReason} onChange={(event) => setRevisitReason(event.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="site-visit-revisit-date">Visit Date *</Label>
+                <Input id="site-visit-revisit-date" type="date" value={revisitDate} onChange={(event) => setRevisitDate(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="site-visit-revisit-time">Visit Time *</Label>
+                <Input id="site-visit-revisit-time" type="time" value={revisitTime} onChange={(event) => setRevisitTime(event.target.value)} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevisitDialogOpen(false)} disabled={isActionLoading}>Close</Button>
+            <Button onClick={handleRevisit} disabled={isActionLoading || !revisitReason.trim() || !revisitDate || !revisitTime}>
+              {isActionLoading ? "Creating..." : "Create Revisit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

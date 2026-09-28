@@ -1,0 +1,180 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('@dct-crm/db', () => ({
+  prisma: {
+    user: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+    },
+    profileFieldPermission: {
+      findMany: vi.fn(),
+    },
+    userPermissionAssignment: {
+      findMany: vi.fn(),
+    },
+    userRole: {
+      findMany: vi.fn(),
+    },
+    fieldDefinition: {
+      findMany: vi.fn(),
+    },
+  },
+}));
+
+import { prisma } from '@dct-crm/db';
+import { EffectivePermissionService } from './effectivePermissions';
+import { getUserFieldPermissions } from './metadata';
+import { reconcileObjectPermissionsForPermissionIds, reconcilePermissionIdsForObjectPermissions } from '../routes/profileSecurity';
+
+describe('effective field permissions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('merges profile and permission set field permissions', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: 'user-1',
+      profileId: 'profile-1',
+      tenantId: 'tenant-1',
+      isActive: true,
+      isSuperAdmin: false,
+    } as any);
+
+    vi.mocked(prisma.profileFieldPermission.findMany).mockResolvedValue([
+      {
+        field: { id: 'field-1', name: 'Name' },
+        canRead: true,
+        canEdit: false,
+      },
+    ] as any);
+
+    vi.mocked(prisma.userPermissionAssignment.findMany).mockResolvedValue([
+      {
+        permissionSet: {
+          name: 'Sales Extra',
+          fieldPermissions: [
+            {
+              field: { id: 'field-1', name: 'Name' },
+              canRead: true,
+              canEdit: true,
+            },
+          ],
+        },
+      },
+    ] as any);
+
+    vi.mocked(prisma.userRole.findMany).mockResolvedValue([] as any);
+
+    const result = await EffectivePermissionService.getEffectiveFieldPermissions('user-1', 'object-1');
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        fieldId: 'field-1',
+        fieldName: 'Name',
+        canRead: true,
+        canEdit: true,
+        source: 'PERMISSION_SET',
+        sourceName: 'Sales Extra',
+      }),
+    ]);
+  });
+
+  it('returns the merged field permissions through the metadata helper', async () => {
+    vi.mocked(prisma.user.findFirst).mockResolvedValue({ id: 'user-1', isSuperAdmin: false } as any);
+
+    vi.spyOn(EffectivePermissionService, 'getEffectiveFieldPermissions').mockResolvedValue([
+      {
+        fieldId: 'field-1',
+        fieldName: 'Name',
+        canRead: true,
+        canEdit: true,
+        source: 'PERMISSION_SET',
+        sourceName: 'Sales Extra',
+      },
+    ] as any);
+
+    const result = await getUserFieldPermissions('tenant-1', 'user-1', 'object-1');
+
+    expect(result).toEqual([
+      { fieldId: 'field-1', fieldName: 'Name', canRead: true, canEdit: true },
+    ]);
+  });
+
+  it('removes stale create permission IDs when object access is set to read-only', () => {
+    const permissionIds = ['perm-create', 'perm-read'];
+    const permissionCatalog = [
+      { id: 'perm-create', name: 'OPPORTUNITY_CREATE' },
+      { id: 'perm-read', name: 'OPPORTUNITY_READ' },
+    ];
+
+    const result = reconcilePermissionIdsForObjectPermissions(
+      [{ objectId: 'opp-1', canCreate: false, canRead: true, canUpdate: false, canDelete: false, viewAll: false, modifyAll: false }],
+      permissionIds,
+      permissionCatalog,
+      { 'opp-1': 'Opportunity' },
+    );
+
+    expect(result).toEqual(['perm-read']);
+  });
+
+  it('removes stale delete permission IDs when delete access is disabled', () => {
+    const permissionIds = ['perm-read', 'perm-delete'];
+    const permissionCatalog = [
+      { id: 'perm-read', name: 'OPPORTUNITY_READ' },
+      { id: 'perm-delete', name: 'OPPORTUNITY_DELETE' },
+    ];
+
+    const result = reconcilePermissionIdsForObjectPermissions(
+      [{ objectId: 'opp-1', canCreate: false, canRead: true, canUpdate: false, canDelete: false, viewAll: false, modifyAll: false }],
+      permissionIds,
+      permissionCatalog,
+      { 'opp-1': 'Opportunity' },
+    );
+
+    expect(result).toEqual(['perm-read']);
+  });
+
+  it('clears object permission flags that no longer match the saved permission IDs', () => {
+    const objectPermissions = [{
+      objectId: 'proj-1',
+      canCreate: true,
+      canRead: true,
+      canUpdate: true,
+      canDelete: true,
+      viewAll: true,
+      modifyAll: true,
+    }];
+
+    const permissionCatalog = [
+      { id: 'perm-read', name: 'PROJECT_READ' },
+    ];
+
+    const result = reconcileObjectPermissionsForPermissionIds(
+      objectPermissions,
+      ['perm-read'],
+      permissionCatalog,
+      { 'proj-1': 'Project' },
+    );
+
+    expect(result).toEqual([{ objectId: 'proj-1', canCreate: false, canRead: true, canUpdate: false, canDelete: false, viewAll: false, modifyAll: false }]);
+  });
+
+  it('does not grant global access based only on an admin profile flag', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      id: 'user-1',
+      profileId: 'profile-1',
+      tenantId: 'tenant-1',
+      isActive: true,
+      isSuperAdmin: false,
+    } as any);
+
+    vi.spyOn(EffectivePermissionService, 'getProfilePermissions').mockResolvedValue([]);
+    vi.spyOn(EffectivePermissionService, 'getPermissionSetPermissions').mockResolvedValue([]);
+    vi.spyOn(EffectivePermissionService, 'getPermissionSetGroupPermissions').mockResolvedValue([]);
+    vi.spyOn(EffectivePermissionService, 'getDirectPermissions').mockResolvedValue([]);
+
+    const result = await EffectivePermissionService.getEffectivePermissions('user-1');
+
+    expect(result).toEqual([]);
+  });
+});

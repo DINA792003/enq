@@ -16,6 +16,16 @@ interface Project {
   name: string;
 }
 
+const SOURCE_OPTIONS = [
+  "WEBSITE",
+  "REFERRAL",
+  "COLD_CALL",
+  "ADVERTISEMENT",
+  "INSTAGRAM",
+  "WHATSAPP",
+  "WALK_IN",
+];
+
 export default function NewLeadPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -27,7 +37,7 @@ export default function NewLeadPage() {
   const [fields, setFields] = React.useState<any[]>([]);
   const [loadingLayout, setLoadingLayout] = React.useState(true);
   const [formData, setFormData] = React.useState<Record<string, any>>({
-    source: "WEBSITE",
+    source: "",
     status: "NEW",
   });
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
@@ -42,7 +52,13 @@ export default function NewLeadPage() {
         ]);
         setProjects(projectsRes.data.data || []);
         setLayout(layoutRes.data.data);
-        setFields(fieldsRes.data.data || []);
+        setFields(
+          (fieldsRes.data.data || []).map((field: any) =>
+            field.name === "source"
+              ? { ...field, label: "Lead Source", required: true }
+              : field
+          )
+        );
       } catch (err) {
         console.error("Failed to load data:", err);
       } finally {
@@ -58,6 +74,10 @@ export default function NewLeadPage() {
     const nextFieldErrors: Record<string, string> = {};
     if (!formData.lastName?.trim()) errors.push("Last name is required");
     if (!formData.company?.trim()) errors.push("Company is required");
+    if (!SOURCE_OPTIONS.includes(formData.source)) {
+      errors.push("Lead Source is required.");
+      nextFieldErrors.source = "Lead Source is required.";
+    }
     if (!String(formData.phone ?? "").trim()) {
       errors.push("Phone number is required.");
       nextFieldErrors.phone = "Phone number is required.";
@@ -125,7 +145,7 @@ export default function NewLeadPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Create Lead</h1>
+          <h1 className="text-xl font-semibold">Create Lead</h1>
           <p className="text-muted-foreground">Add a new lead</p>
         </div>
       </div>
@@ -142,12 +162,12 @@ export default function NewLeadPage() {
             {[1, 2, 3].map((i) => (
               <Card key={i}>
                 <CardHeader>
-                  <div className="h-5 w-40 bg-muted animate-pulse rounded" />
+                  <div className="h-5 w-40 bg-muted animate-pulse rounded-md" />
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="h-10 bg-muted animate-pulse rounded" />
-                    <div className="h-10 bg-muted animate-pulse rounded" />
+                    <div className="h-10 bg-muted animate-pulse rounded-md" />
+                    <div className="h-10 bg-muted animate-pulse rounded-md" />
                   </div>
                 </CardContent>
               </Card>

@@ -324,7 +324,7 @@ export default function CompanyDetailsPage() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{company.name}</h1>
+            <h1 className="text-xl font-semibold">{company.name}</h1>
             <p className="text-muted-foreground">{company.companyCode}</p>
           </div>
         </div>
@@ -481,7 +481,7 @@ export default function CompanyDetailsPage() {
                         max={10000}
                         value={capacityForm.maxTotalUsers}
                         onChange={(e) => setCapacityForm({ ...capacityForm, maxTotalUsers: parseInt(e.target.value) || 1 })}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       />
                     </div>
                     <div className="space-y-2">
@@ -492,7 +492,7 @@ export default function CompanyDetailsPage() {
                         max={10000}
                         value={capacityForm.maxAdminUsers}
                         onChange={(e) => setCapacityForm({ ...capacityForm, maxAdminUsers: parseInt(e.target.value) || 0 })}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       />
                     </div>
                   </div>
@@ -594,7 +594,7 @@ export default function CompanyDetailsPage() {
                         value={packageForm.packageName}
                         onChange={(e) => setPackageForm({ ...packageForm, packageName: e.target.value })}
                         placeholder="e.g. Starter, Professional, Enterprise"
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       />
                     </div>
                     <div className="space-y-2">
@@ -602,7 +602,7 @@ export default function CompanyDetailsPage() {
                       <select
                         value={packageForm.packageStatus}
                         onChange={(e) => setPackageForm({ ...packageForm, packageStatus: e.target.value })}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       >
                         <option value="active">Active</option>
                         <option value="trial">Trial</option>
@@ -616,7 +616,7 @@ export default function CompanyDetailsPage() {
                         type="date"
                         value={packageForm.packageStartDate}
                         onChange={(e) => setPackageForm({ ...packageForm, packageStartDate: e.target.value })}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       />
                     </div>
                     <div className="space-y-2">
@@ -625,7 +625,7 @@ export default function CompanyDetailsPage() {
                         type="date"
                         value={packageForm.packageExpiryDate}
                         onChange={(e) => setPackageForm({ ...packageForm, packageExpiryDate: e.target.value })}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                       />
                     </div>
                     <div className="md:col-span-2 space-y-2">
@@ -769,7 +769,7 @@ function StatItem({ icon: Icon, label, value }: { icon: React.ElementType; label
   return (
     <div className="rounded-lg border p-3 text-center">
       <Icon className="h-5 w-5 text-muted-foreground mx-auto mb-1" />
-      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-xl font-semibold">{value}</p>
       <p className="text-xs text-muted-foreground">{label}</p>
     </div>
   );
@@ -781,7 +781,7 @@ function CapacityCard({ label, current, max, exceeded }: { label: string; curren
     <div className={`rounded-lg border p-4 ${exceeded ? "border-amber-400 bg-amber-50" : ""}`}>
       <p className="text-sm text-muted-foreground">{label}</p>
       <div className="flex items-baseline gap-1 mt-1">
-        <span className={`text-2xl font-bold ${exceeded ? "text-amber-600" : ""}`}>{current}</span>
+        <span className={`text-xl font-semibold ${exceeded ? "text-amber-600" : ""}`}>{current}</span>
         <span className="text-sm text-muted-foreground">/ {max}</span>
       </div>
       <div className="mt-2 h-2 rounded-full bg-muted overflow-hidden">
@@ -800,7 +800,7 @@ function StatCard({ label, value, icon: Icon, highlight }: { label: string; valu
       <p className="text-sm text-muted-foreground">{label}</p>
       <div className="flex items-center gap-2 mt-1">
         <Icon className={`h-5 w-5 ${highlight ? "text-amber-600" : "text-muted-foreground"}`} />
-        <span className={`text-2xl font-bold ${highlight ? "text-amber-600" : ""}`}>{value}</span>
+        <span className={`text-xl font-semibold ${highlight ? "text-amber-600" : ""}`}>{value}</span>
       </div>
     </div>
   );

@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
 import { auditLog } from '../middleware/audit';
+import {
+  applyScope,
+  canAccessLeadId,
+  canAccessQuotation,
+  getScopeClause,
+} from '../services/recordAccess';
 
 const router = Router();
 
@@ -47,13 +53,14 @@ router.get('/', authorize('Quotation', 'read'), async (req: AuthRequest, res: Re
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { tenantId };
+    let where: any = { tenantId };
     if (opportunityId) where.opportunityId = opportunityId;
     if (leadId) where.leadId = leadId;
     if (projectId) where.projectId = projectId;
     if (status) where.status = status;
     if (minAmount) where.totalAmount = { ...where.totalAmount, gte: Number(minAmount) };
     if (maxAmount) where.totalAmount = { ...where.totalAmount, lte: Number(maxAmount) };
+    where = applyScope(where, await getScopeClause(req.user!, 'quotation'));
 
     const [quotations, total] = await Promise.all([
       prisma.quotation.findMany({
@@ -108,6 +115,10 @@ router.get('/:id', authorize('Quotation', 'read'), async (req: AuthRequest, res:
       return res.status(404).json({ success: false, error: 'Quotation not found' });
     }
 
+    if (!(await canAccessQuotation(req.user!, quotation))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this quotation' });
+    }
+
     res.json({ success: true, data: quotation });
   } catch (error) {
     console.error('Get quotation error:', error);
@@ -119,6 +130,10 @@ router.post('/', authorize('Quotation', 'create'), async (req: AuthRequest, res:
   try {
     const { tenantId, id: userId } = req.user!;
     const data = quotationSchema.parse(req.body);
+
+    if (data.leadId && !(await canAccessLeadId(req.user!, data.leadId))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked lead' });
+    }
 
     const quotationNumber = `QT-${Date.now().toString(36).toUpperCase()}`;
 
@@ -177,6 +192,10 @@ router.put('/:id', authorize('Quotation', 'edit'), async (req: AuthRequest, res:
       return res.status(404).json({ success: false, error: 'Quotation not found' });
     }
 
+    if (!(await canAccessQuotation(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this quotation' });
+    }
+
     if (existing.status !== 'DRAFT') {
       return res.status(400).json({ success: false, error: 'Only draft quotations can be edited' });
     }
@@ -232,6 +251,10 @@ router.patch('/:id/submit', authorize('Quotation', 'edit'), async (req: AuthRequ
       return res.status(404).json({ success: false, error: 'Quotation not found' });
     }
 
+    if (!(await canAccessQuotation(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this quotation' });
+    }
+
     if (existing.status !== 'DRAFT') {
       return res.status(400).json({ success: false, error: 'Only draft quotations can be submitted' });
     }
@@ -261,6 +284,10 @@ router.patch('/:id/approve', authorize('Quotation', 'edit'), async (req: AuthReq
 
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Quotation not found' });
+    }
+
+    if (!(await canAccessQuotation(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this quotation' });
     }
 
     if (existing.status !== 'SUBMITTED') {
@@ -305,6 +332,10 @@ router.patch('/:id/reject', authorize('Quotation', 'edit'), async (req: AuthRequ
       return res.status(404).json({ success: false, error: 'Quotation not found' });
     }
 
+    if (!(await canAccessQuotation(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this quotation' });
+    }
+
     if (existing.status !== 'SUBMITTED') {
       return res.status(400).json({ success: false, error: 'Only submitted quotations can be rejected' });
     }
@@ -344,6 +375,10 @@ router.delete('/:id', authorize('Quotation', 'delete'), async (req: AuthRequest,
 
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Quotation not found' });
+    }
+
+    if (!(await canAccessQuotation(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this quotation' });
     }
 
     if (existing.status !== 'DRAFT') {

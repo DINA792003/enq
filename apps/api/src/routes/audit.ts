@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+﻿import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
@@ -55,6 +55,75 @@ router.get('/', authorize('AuditLog', 'read'), async (req: AuthRequest, res: Res
   } catch (error) {
     console.error('Get audit logs error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
+  }
+});
+
+router.get('/summary', authorize('AuditLog', 'read'), async (req: AuthRequest, res: Response) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const where: any = { tenantId: req.tenantId! };
+    if (startDate || endDate) {
+      where.createdAt = {};
+      if (startDate) where.createdAt.gte = new Date(startDate as string);
+      if (endDate) where.createdAt.lte = new Date(endDate as string);
+    }
+
+    const [totalActions, byAction, byObjectType, byUser, recentActivity] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.groupBy({
+        by: ['action'],
+        where,
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+      }),
+      prisma.auditLog.groupBy({
+        by: ['objectType'],
+        where,
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+      }),
+      prisma.auditLog.groupBy({
+        by: ['userId'],
+        where: { ...where, userId: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+      prisma.auditLog.findMany({
+        where,
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+    ]);
+
+    const userIds = byUser.map((u) => u.userId!).filter(Boolean);
+    const users = userIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, firstName: true, lastName: true },
+        })
+      : [];
+
+    res.json({
+      success: true,
+      data: {
+        totalActions,
+        byAction: byAction.map((a) => ({ action: a.action, count: a._count.id })),
+        byObjectType: byObjectType.map((o) => ({ objectType: o.objectType, count: o._count.id })),
+        byUser: byUser.map((u) => ({
+          user: users.find((usr) => usr.id === u.userId),
+          count: u._count.id,
+        })),
+        recentActivity,
+      },
+    });
+  } catch (error) {
+    console.error('Get audit summary error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch audit summary' });
   }
 });
 
@@ -162,75 +231,6 @@ router.get('/user/:userId', authorize('AuditLog', 'read'), async (req: AuthReque
   } catch (error) {
     console.error('Get user audit logs error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch user audit logs' });
-  }
-});
-
-router.get('/summary', authorize('AuditLog', 'read'), async (req: AuthRequest, res: Response) => {
-  try {
-    const { startDate, endDate } = req.query;
-
-    const where: any = { tenantId: req.tenantId! };
-    if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate as string);
-      if (endDate) where.createdAt.lte = new Date(endDate as string);
-    }
-
-    const [totalActions, byAction, byObjectType, byUser, recentActivity] = await Promise.all([
-      prisma.auditLog.count({ where }),
-      prisma.auditLog.groupBy({
-        by: ['action'],
-        where,
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-      }),
-      prisma.auditLog.groupBy({
-        by: ['objectType'],
-        where,
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-      }),
-      prisma.auditLog.groupBy({
-        by: ['userId'],
-        where: { ...where, userId: { not: null } },
-        _count: { id: true },
-        orderBy: { _count: { id: 'desc' } },
-        take: 10,
-      }),
-      prisma.auditLog.findMany({
-        where,
-        include: {
-          user: { select: { id: true, firstName: true, lastName: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      }),
-    ]);
-
-    const userIds = byUser.map((u) => u.userId!).filter(Boolean);
-    const users = userIds.length > 0
-      ? await prisma.user.findMany({
-          where: { id: { in: userIds } },
-          select: { id: true, firstName: true, lastName: true },
-        })
-      : [];
-
-    res.json({
-      success: true,
-      data: {
-        totalActions,
-        byAction: byAction.map((a) => ({ action: a.action, count: a._count.id })),
-        byObjectType: byObjectType.map((o) => ({ objectType: o.objectType, count: o._count.id })),
-        byUser: byUser.map((u) => ({
-          user: users.find((usr) => usr.id === u.userId),
-          count: u._count.id,
-        })),
-        recentActivity,
-      },
-    });
-  } catch (error) {
-    console.error('Get audit summary error:', error);
-    res.status(500).json({ success: false, error: 'Failed to fetch audit summary' });
   }
 });
 

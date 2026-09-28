@@ -224,7 +224,7 @@ export default function BookingsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Bookings</h1>
+          <h1 className="text-xl font-semibold">Bookings</h1>
           <p className="text-muted-foreground">
             Manage project unit bookings and reservations
           </p>
@@ -240,10 +240,11 @@ export default function BookingsPage() {
         data={bookings}
         searchKey="bookingNumber"
         searchPlaceholder="Search by booking number..."
-        totalItems={totalItems}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-      />
+          totalItems={totalItems}
+          currentPage={currentPage}
+          onPageChange={setCurrentPage}
+          serverPagination
+        />
     </div>
   );
 }

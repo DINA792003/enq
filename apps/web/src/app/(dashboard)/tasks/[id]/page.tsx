@@ -8,7 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import Link from "next/link";
 
-import { followUpApi, ApiResponse } from "@/lib/api";
+import { taskApi, ApiResponse } from "@/lib/api";
 
 import { useToast } from "@/hooks/use-toast";
 
@@ -91,7 +91,7 @@ export default function TaskDetailPage() {
     const fetchTask = async () => {
       try {
         setIsLoading(true);
-        const res = await followUpApi.get(params.id as string);
+        const res = await taskApi.get(params.id as string);
         if (res.data.success && res.data.data) {
           setTask(res.data.data);
         } else {
@@ -109,7 +109,7 @@ export default function TaskDetailPage() {
 
   const handleComplete = async () => {
     try {
-      const res = await followUpApi.complete(params.id as string);
+      const res = await taskApi.updateStatus(params.id as string, "COMPLETED");
       if (res.data.success) {
         toast({ title: "Success", description: "Task marked as completed" });
         setTask((prev) => (prev ? { ...prev, status: "completed", completedAt: new Date().toISOString() } : prev));
@@ -121,7 +121,7 @@ export default function TaskDetailPage() {
 
   const handleReopen = async () => {
     try {
-      const res = await followUpApi.reopen(params.id as string);
+      const res = await taskApi.updateStatus(params.id as string, "PENDING");
       if (res.data.success) {
         toast({ title: "Success", description: "Task reopened" });
         setTask((prev) => (prev ? { ...prev, status: "pending", completedAt: undefined } : prev));
@@ -166,7 +166,7 @@ export default function TaskDetailPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{task.title}</h1>
+            <h1 className="text-xl font-semibold">{task.title}</h1>
             <p className="text-muted-foreground">Task #{task.id}</p>
           </div>
         </div>
@@ -226,11 +226,7 @@ export default function TaskDetailPage() {
                 <p className="text-sm text-muted-foreground">Due Date</p>
                 <p className="text-sm font-medium">
                   {task.dueDate
-                    ? new Date(task.dueDate).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })
+                    ? formatDate(task.dueDate)
                     : "Not set"}
                 </p>
               </div>

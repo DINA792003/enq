@@ -3,6 +3,13 @@ import { prisma } from '@dct-crm/db';
 import { followUpSchema } from '@dct-crm/shared';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
+import {
+  applyScope,
+  canAccessFollowUp,
+  canAccessLeadId,
+  getScopeClause,
+} from '../services/recordAccess';
+import { promoteNewLeadOnFirstActivity } from '../services/leadWorkflowExtras';
 
 const router = Router();
 
@@ -13,7 +20,7 @@ router.get('/', authorize('FollowUp', 'read'), async (req: AuthRequest, res: Res
     const { page = 1, limit = 20, isCompleted, leadId, ownerId, search, sortBy = 'dueDate', sortOrder = 'asc' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { tenantId: req.tenantId! };
+    let where: any = { tenantId: req.tenantId! };
     if (isCompleted !== undefined) where.isCompleted = isCompleted === 'true';
     if (leadId) where.leadId = leadId;
     if (ownerId) where.ownerId = ownerId;
@@ -23,6 +30,7 @@ router.get('/', authorize('FollowUp', 'read'), async (req: AuthRequest, res: Res
         { description: { contains: search as string, mode: 'insensitive' } },
       ];
     }
+    where = applyScope(where, await getScopeClause(req.user!, 'followUp'));
 
     const [followUps, total] = await Promise.all([
       prisma.followUp.findMany({
@@ -105,6 +113,10 @@ router.get('/:id', authorize('FollowUp', 'read'), async (req: AuthRequest, res: 
       return res.status(404).json({ success: false, error: 'Follow-up not found' });
     }
 
+    if (!(await canAccessFollowUp(req.user!, followUp))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this follow-up' });
+    }
+
     res.json({ success: true, data: followUp });
   } catch (error) {
     console.error('Get follow-up error:', error);
@@ -116,31 +128,49 @@ router.post('/', authorize('FollowUp', 'create'), async (req: AuthRequest, res: 
   try {
     const data = followUpSchema.parse(req.body);
 
-    const followUp = await prisma.followUp.create({
-      data: {
-        tenantId: req.tenantId!,
-        ownerId: req.user!.id,
-        title: data.title,
-        description: data.description,
-        dueDate: new Date(data.dueDate),
-        leadId: data.leadId || undefined,
-      },
-      include: {
-        owner: { select: { id: true, firstName: true, lastName: true } },
-        lead: { select: { id: true, firstName: true, lastName: true } },
-      },
-    });
+    if (data.leadId && !(await canAccessLeadId(req.user!, data.leadId))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked lead' });
+    }
 
-    await prisma.auditLog.create({
-      data: {
-        tenantId: req.tenantId!,
-        userId: req.user!.id,
-        leadId: data.leadId || undefined,
-        action: 'FOLLOW_UP_CREATED',
-        objectType: 'FollowUp',
-        objectId: followUp.id,
-        newValues: data,
-      },
+    const followUp = await prisma.$transaction(async (tx) => {
+      const created = await tx.followUp.create({
+        data: {
+          tenantId: req.tenantId!,
+          ownerId: req.user!.id,
+          title: data.title,
+          description: data.description,
+          dueDate: new Date(data.dueDate),
+          leadId: data.leadId || undefined,
+        },
+        include: {
+          owner: { select: { id: true, firstName: true, lastName: true } },
+          lead: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
+
+      if (data.leadId) {
+        await promoteNewLeadOnFirstActivity(tx, {
+          tenantId: req.tenantId!,
+          leadId: data.leadId,
+          userId: req.user!.id,
+          profileName: req.user!.profileName,
+          activityLabel: 'Follow-up',
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: req.tenantId!,
+          userId: req.user!.id,
+          leadId: data.leadId || undefined,
+          action: 'FOLLOW_UP_CREATED',
+          objectType: 'FollowUp',
+          objectId: created.id,
+          newValues: data,
+        },
+      });
+
+      return created;
     });
 
     res.status(201).json({ success: true, data: followUp });
@@ -161,6 +191,10 @@ router.put('/:id', authorize('FollowUp', 'edit'), async (req: AuthRequest, res: 
 
     if (!existingFollowUp) {
       return res.status(404).json({ success: false, error: 'Follow-up not found' });
+    }
+
+    if (!(await canAccessFollowUp(req.user!, existingFollowUp))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this follow-up' });
     }
 
     const data = followUpSchema.partial().parse(req.body);
@@ -210,6 +244,10 @@ router.delete('/:id', authorize('FollowUp', 'delete'), async (req: AuthRequest, 
       return res.status(404).json({ success: false, error: 'Follow-up not found' });
     }
 
+    if (!(await canAccessFollowUp(req.user!, followUp))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this follow-up' });
+    }
+
     await prisma.followUp.delete({ where: { id: req.params.id } });
 
     await prisma.auditLog.create({
@@ -238,6 +276,10 @@ router.put('/:id/complete', authorize('FollowUp', 'edit'), async (req: AuthReque
 
     if (!followUp) {
       return res.status(404).json({ success: false, error: 'Follow-up not found' });
+    }
+
+    if (!(await canAccessFollowUp(req.user!, followUp))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this follow-up' });
     }
 
     if (followUp.isCompleted) {
@@ -277,6 +319,10 @@ router.put('/:id/reopen', authorize('FollowUp', 'edit'), async (req: AuthRequest
 
     if (!followUp) {
       return res.status(404).json({ success: false, error: 'Follow-up not found' });
+    }
+
+    if (!(await canAccessFollowUp(req.user!, followUp))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this follow-up' });
     }
 
     if (!followUp.isCompleted) {

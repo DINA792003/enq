@@ -16,6 +16,7 @@ import {
 import { DataTable } from "@/components/crm/data-table";
 import { FieldDefinition } from "./field-renderer";
 import { MoreHorizontal, Eye, Edit, Trash2 } from "lucide-react";
+import { formatCRMDate, formatCRMDateTime } from "@dct-crm/shared";
 
 interface DynamicTableProps {
   objectName: string;
@@ -67,11 +68,7 @@ function formatCellValue(value: any, field: FieldDefinition): React.ReactNode {
       try {
         return (
           <span>
-            {new Date(String(value)).toLocaleDateString("en-IN", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })}
+            {formatCRMDate(String(value))}
           </span>
         );
       } catch {
@@ -82,13 +79,7 @@ function formatCellValue(value: any, field: FieldDefinition): React.ReactNode {
       try {
         return (
           <span>
-            {new Date(String(value)).toLocaleString("en-IN", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+            {formatCRMDateTime(String(value))}
           </span>
         );
       } catch {
@@ -270,10 +261,11 @@ export function DynamicTable({
       data={data}
       searchKey={displayFields[0]?.name}
       searchPlaceholder={`Search ${pluralLabel.toLowerCase()}...`}
-      isLoading={isLoading}
-      totalItems={totalItems}
-      currentPage={currentPage}
-      onPageChange={onPageChange}
-    />
+        isLoading={isLoading}
+        totalItems={totalItems}
+        currentPage={currentPage}
+        onPageChange={onPageChange}
+        serverPagination
+      />
   );
 }

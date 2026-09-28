@@ -1,10 +1,12 @@
 import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 import { invalidateCache } from '../services/metadata';
 
 const router = Router();
 router.use(authenticate);
+router.use(requirePermission('PROFILE_PERMISSION_MANAGE'));
 
 router.get('/:objectName', async (req: AuthRequest, res: Response) => {
   try {
@@ -109,6 +111,12 @@ router.post('/:objectName/bulk', async (req: AuthRequest, res: Response) => {
     for (const perm of permissions) {
       const { roleId, canCreate, canRead, canUpdate, canDelete, viewAll, modifyAll } = perm;
       if (!roleId) continue;
+
+      const role = await prisma.role.findFirst({
+        where: { id: roleId, tenantId: req.tenantId! },
+        select: { id: true },
+      });
+      if (!role) continue;
 
       const existing = await prisma.objectPermission.findUnique({
         where: { roleId_objectId: { roleId, objectId: object.id } },

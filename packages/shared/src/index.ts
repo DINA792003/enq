@@ -1,6 +1,74 @@
 import { z } from 'zod';
 
 export const PHONE_DUPLICATE_ERROR = 'Phone number already exists for another lead.';
+const CRM_TIMEZONE = 'Asia/Kolkata';
+
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function getCRMFormatter(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify(options);
+  let formatter = formatterCache.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-IN', { ...options, timeZone: CRM_TIMEZONE });
+    formatterCache.set(key, formatter);
+  }
+  return formatter;
+}
+
+export function formatCRMDate(value: string | number | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return getCRMFormatter({ day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+}
+
+export function formatCRMDateTime(value: string | number | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return getCRMFormatter({
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+export function crmLocalDateTimeToDate(date: string, time: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!match || !timeMatch) throw new Error('Invalid CRM date/time');
+  const [, year, month, day] = match;
+  const [, hour, minute] = timeMatch;
+  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)) - 330 * 60 * 1000);
+}
+
+export function crmDateToUtcStart(date: string): Date {
+  return crmLocalDateTimeToDate(date, '00:00');
+}
+
+export function crmDateTimeInputValue(value = new Date()): string {
+  const parts = getCRMFormatter({
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(value);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+}
+
+export function getCRMDayBounds(now = new Date()): { start: Date; end: Date } {
+  const parts = getCRMFormatter({
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const start = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)) - 330 * 60 * 1000);
+  return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+}
 
 export function normalizePhone(raw: string): string {
   return raw.replace(/\s+/g, '');
@@ -13,24 +81,6 @@ export function normalizePhone(raw: string): string {
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-});
-
-export const registerSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  phone: z.string().optional(),
-  tenantSlug: z.string().optional(),
-});
-
-export const changePasswordSchema = z.object({
-  currentPassword: z.string().min(6),
-  newPassword: z.string().min(8),
-  confirmPassword: z.string().min(8),
-}).refine((data) => data.newPassword === data.confirmPassword, {
-  message: "Passwords don't match",
-  path: ["confirmPassword"],
 });
 
 // ============================================
@@ -68,6 +118,11 @@ export const leadSchema = z.object({
   notes: z.string().optional(),
   ownerId: z.string().optional(),
   projectId: z.string().optional(),
+});
+
+export const leadCreateSchema = leadSchema.omit({
+  status: true,
+  ownerId: true,
 });
 
 export const siteVisitSchema = z.object({
@@ -203,67 +258,6 @@ export interface PaginatedResponse<T> {
 }
 
 // ============================================
-// AI TYPES
-// ============================================
-
-export interface AIChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  toolCalls?: any[];
-  toolResults?: any[];
-  createdAt: Date;
-}
-
-export interface AIConversation {
-  id: string;
-  title?: string;
-  messages: AIChatMessage[];
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface AIToolDefinition {
-  name: string;
-  description: string;
-  parameters: {
-    type: 'object';
-    properties: Record<string, any>;
-    required: string[];
-  };
-}
-
-export interface AIToolResult {
-  tool: string;
-  result: any;
-  success: boolean;
-  error?: string;
-}
-
-// ============================================
-// ANALYTICS TYPES
-// ============================================
-
-export interface MetricDefinition {
-  name: string;
-  description: string;
-  source: string;
-  dateField: string;
-  calculation: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
-  filters?: Record<string, any>;
-}
-
-export interface DashboardWidget {
-  id: string;
-  type: 'kpi' | 'metric' | 'chart' | 'table' | 'funnel' | 'leaderboard' | 'trend' | 'gauge';
-  title: string;
-  metric?: string;
-  data?: any;
-  config?: Record<string, any>;
-  position: { x: number; y: number; w: number; h: number };
-}
-
-// ============================================
 // SEARCH TYPES
 // ============================================
 
@@ -274,11 +268,4 @@ export interface SearchResult {
   subtitle?: string;
   url: string;
   tenantId: string;
-}
-
-export interface SearchFilters {
-  types?: string[];
-  dateRange?: { start: string; end: string };
-  status?: string[];
-  owner?: string;
 }

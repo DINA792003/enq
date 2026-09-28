@@ -11,6 +11,7 @@ import { auditLog } from '../middleware/audit';
 import { REPORT_OBJECTS, getReportMetadataRegistry } from '../reports/report-metadata';
 import { runReport, parseFilterExpression, canAccessReportForUser, canAccessReportFolderForUser } from '../reports/report-engine';
 import { createReportCsv, reportCsvFilename } from '../reports/report-csv-export';
+import { resolveReportShowMe } from '../services/recordAccess';
 
 const router = Router();
 export const reportFolderRouter = Router();
@@ -88,7 +89,8 @@ router.post('/run', authorize('Report', 'read'), async (req: AuthRequest, res: R
       return res.status(400).json({ success: false, error: 'objectName and at least one column are required' });
     }
     const filterTree = typeof filterExpression === 'string' && filterExpression.trim() ? parseFilterExpression(filterExpression, filters?.length || 0) : undefined;
-    const data = await runReport({ tenantId: req.user!.tenantId, userId: req.user!.id, objectName, columns, filters, filterTree, showMe: showMe === "mine" ? "mine" : "all", crossFilter, filterLogic, aggregates, groupBy, groupColumn, rowGroups, columnGroups, groupOptions, sortBy, sortOrder, sortRules, limit });
+    const forcedShowMe = await resolveReportShowMe(req.user!, showMe);
+    const data = await runReport({ tenantId: req.user!.tenantId, userId: req.user!.id, objectName, columns, filters, filterTree, showMe: forcedShowMe, crossFilter, filterLogic, aggregates, groupBy, groupColumn, rowGroups, columnGroups, groupOptions, sortBy, sortOrder, sortRules, limit });
     res.json({ success: true, data });
   } catch (error: any) {
     console.error('Run report error:', error);
@@ -411,13 +413,16 @@ router.get('/:id/export', authorize('Report', 'read'), async (req: AuthRequest, 
     const savedAggregates = Array.isArray(reportConfig.aggregates) ? reportConfig.aggregates as any[] : [];
     const savedFilterLogic = reportConfig.filterLogic === 'OR' ? 'OR' as const : 'AND' as const;
     const savedSortOrder = reportConfig.sortOrder === 'asc' ? 'asc' as const : 'desc' as const;
+    const forcedShowMe = await resolveReportShowMe(req.user!, reportConfig.showMe);
 
     const result = await runReport({
       tenantId,
+      userId: req.user!.id,
       objectName: report.objectName,
       columns: Array.isArray(report.columns) ? report.columns as string[] : [],
       filters: Array.isArray(report.filters) ? report.filters as any[] : [],
       filterLogic: savedFilterLogic,
+      showMe: forcedShowMe,
       aggregates: savedAggregates,
       groupBy: savedRowGroups[0] || undefined,
       groupColumn: savedColumnGroups[0] || undefined,
@@ -515,19 +520,7 @@ reportFolderRouter.get('/', authorize('Report', 'read'), async (req: AuthRequest
       orderBy: { name: 'asc' },
     });
 
-    const userRoles = await prisma.userRole.findMany({ where: { userId }, select: { roleId: true } });
-    const roleIds = userRoles.map((role) => role.roleId);
-    const sharedFolderIds = await prisma.reportFolderShare.findMany({
-      where: {
-        tenantId,
-        OR: [
-          { userId },
-          ...(roleIds.length ? [{ roleId: { in: roleIds } }] : []),
-        ],
-      },
-      select: { folderId: true },
-    });
-    const sharedFolderIdSet = new Set(sharedFolderIds.map((share) => share.folderId));
+    const sharedFolderIdSet = new Set(directlySharedFolderIds);
     const accessibleFolders = folders.filter((folder) => {
       if (folder.createdBy === userId || req.user?.isSuperAdmin) return true;
       return folder.visibility === 'PUBLIC' || folder.isShared || sharedFolderIdSet.has(folder.id);
@@ -822,7 +815,13 @@ router.post('/:id/execute', authorize('Report', 'read'), async (req: AuthRequest
       return res.status(400).json({ success: false, error: `Unsupported object type: ${report.objectName}` });
     }
 
-    const where: any = { tenantId, ...filters };
+    const forcedShowMe = await resolveReportShowMe(req.user!, 'all');
+    const scopeClause = forcedShowMe === 'mine' && req.user
+      ? { ownerId: req.user.id }
+      : null;
+    const where: any = scopeClause
+      ? { tenantId, AND: [{ ...filters }, scopeClause] }
+      : { tenantId, ...filters };
 
     const data = await model.findMany({
       where,

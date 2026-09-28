@@ -62,18 +62,18 @@ export function DynamicDetail({
 }: DynamicDetailProps) {
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-10" />
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Skeleton className="h-9 w-9" />
           <div className="space-y-2">
-            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-6 w-64" />
             <Skeleton className="h-4 w-32" />
           </div>
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
-              <CardContent className="p-6">
+              <CardContent className="p-4">
                 <Skeleton className="h-20 w-full" />
               </CardContent>
             </Card>
@@ -185,19 +185,19 @@ export function DynamicDetail({
     record.id;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {basePath && (
             <Button variant="ghost" size="icon" asChild>
               <Link href={basePath}>
-                <ArrowLeft className="h-5 w-5" />
+                <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
           )}
           <div>
-            <h1 className="text-2xl font-bold">{recordTitle}</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-xl font-semibold">{recordTitle}</h1>
+            <p className="text-xs text-muted-foreground">
               {objectLabel}
               {record.recordNumber && ` • ${record.recordNumber}`}
             </p>

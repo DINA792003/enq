@@ -22,10 +22,11 @@ router.use(authenticate);
 async function checkObjectPermission(req: AuthRequest, objectName: string, action: 'create' | 'read' | 'update' | 'delete'): Promise<{ allowed: boolean; permissions: Awaited<ReturnType<typeof getUserObjectPermissions>> }> {
   if (req.user?.isSuperAdmin) return { allowed: true, permissions: null };
 
-  const permissions = await getUserObjectPermissions(req.tenantId!, req.user!.id, objectName);
+  const permissions = await getUserObjectPermissions(req.tenantId!, req.user!.id, objectName, req.user);
   if (!permissions) {
     const { EffectivePermissionService } = await import('../services/effectivePermissions');
-    const hasFullAccess = await EffectivePermissionService.hasAnyPermission(req.user!.id, ['FULL_SYSTEM_ACCESS']);
+    const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user!, req.user!.id);
+    const hasFullAccess = perms.some((p) => p.name === 'FULL_SYSTEM_ACCESS');
     return { allowed: hasFullAccess, permissions: null };
   }
 
@@ -39,7 +40,7 @@ async function checkObjectPermission(req: AuthRequest, objectName: string, actio
 }
 
 async function canAccessOwnedRecord(req: AuthRequest, objectName: string, ownerId: string | null, action: 'read' | 'update' | 'delete') {
-  const permissions = await getUserObjectPermissions(req.tenantId!, req.user!.id, objectName);
+  const permissions = await getUserObjectPermissions(req.tenantId!, req.user!.id, objectName, req.user);
   if (!permissions) return true;
   if (permissions.modifyAll || (permissions.viewAll && action === 'read')) return true;
 

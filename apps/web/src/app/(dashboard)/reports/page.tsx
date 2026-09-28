@@ -257,9 +257,9 @@ function ReportsContent() {
   return <div className="space-y-4">
     {folderSuccess && <div role="status" className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">{folderSuccess}</div>}
     <div className="flex flex-col gap-4 rounded-lg border bg-card p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-      <div><p className="text-sm text-muted-foreground">Reports</p><h1 className="text-2xl font-bold tracking-tight">{isFoldersPage ? "All Folders" : viewLabels[view]}</h1><p className="mt-1 text-xs text-muted-foreground">{isFoldersPage ? folders.length : reports.length} {(isFoldersPage ? folders.length : reports.length) === 1 ? "item" : "items"}</p></div>
+      <div><p className="text-sm text-muted-foreground">Reports</p><h1 className="text-xl font-semibold tracking-tight">{isFoldersPage ? "All Folders" : viewLabels[view]}</h1><p className="mt-1 text-xs text-muted-foreground">{isFoldersPage ? folders.length : reports.length} {(isFoldersPage ? folders.length : reports.length) === 1 ? "item" : "items"}</p></div>
       <div className="flex flex-wrap gap-2">
-        <div className="relative min-w-[240px] flex-1 lg:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isFoldersPage ? "Search all folders..." : "Search reports and folders..."} className="h-10 w-full rounded-md border bg-background pl-9 pr-9 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />{search && <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"><X className="h-4 w-4" /></button>}</div>
+        <div className="relative min-w-[240px] flex-1 lg:w-72"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={isFoldersPage ? "Search all folders..." : "Search reports and folders..."} className="h-9 w-full rounded-md border bg-background pl-9 pr-9 text-[13px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />{search && <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"><X className="h-4 w-4" /></button>}</div>
         <Button onClick={() => void openCreateModal()}><Plus className="mr-2 h-4 w-4" />New Report</Button><Button variant="outline" onClick={() => { setFolderError(""); setShowFolderModal(true); }}><Folder className="mr-2 h-4 w-4" />New Folder</Button>
         <Button variant="outline" aria-label="Refresh reports" onClick={() => window.location.reload()}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
       </div>
@@ -320,9 +320,9 @@ function ReportsContent() {
     {sharingReport && <Modal title={`Share ${sharingReport.name}`} onClose={() => { setSharingReport(null); setShareError(""); }}>
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Share this report with a user or role.</p>
-        <Field label="User ID"><input value={shareUserId} onChange={(event) => setShareUserId(event.target.value)} className="mt-2 h-10 w-full rounded-md border px-3 text-sm" placeholder="Optional user ID" /></Field>
-        <Field label="Role ID"><input value={shareRoleId} onChange={(event) => setShareRoleId(event.target.value)} className="mt-2 h-10 w-full rounded-md border px-3 text-sm" placeholder="Optional role ID" /></Field>
-        <Field label="Permission"><select value={shareAccessLevel} onChange={(event) => setShareAccessLevel(event.target.value as "VIEWER" | "EDITOR")} className="mt-2 h-10 w-full rounded-md border px-3 text-sm"><option value="VIEWER">Viewer</option><option value="EDITOR">Editor</option></select></Field>
+        <Field label="User ID"><input value={shareUserId} onChange={(event) => setShareUserId(event.target.value)} className="mt-2 h-9 w-full rounded-md border px-3 text-[13px]" placeholder="Optional user ID" /></Field>
+        <Field label="Role ID"><input value={shareRoleId} onChange={(event) => setShareRoleId(event.target.value)} className="mt-2 h-9 w-full rounded-md border px-3 text-[13px]" placeholder="Optional role ID" /></Field>
+        <Field label="Permission"><select value={shareAccessLevel} onChange={(event) => setShareAccessLevel(event.target.value as "VIEWER" | "EDITOR")} className="mt-2 h-9 w-full rounded-md border px-3 text-[13px]"><option value="VIEWER">Viewer</option><option value="EDITOR">Editor</option></select></Field>
         {shareError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{shareError}</p>}
         <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setSharingReport(null)}>Cancel</Button><Button disabled={savingShare} onClick={() => void shareReport()}>{savingShare ? "Sharing..." : "Share"}</Button></div>
       </div>
@@ -335,7 +335,7 @@ function ReportsContent() {
               value={folderName}
               onChange={(event) => setFolderName(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void createFolder(); } }}
-              className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-lg text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="mt-2 h-9 w-full rounded-md border border-input bg-white px-3 text-[13px] text-slate-800 outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
               placeholder="Sales Reports"
               required
             />
@@ -346,7 +346,7 @@ function ReportsContent() {
               value={folderUniqueName}
               onChange={(event) => setFolderUniqueName(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void createFolder(); } }}
-              className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-lg text-slate-800 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              className="mt-2 h-9 w-full rounded-md border border-input bg-white px-3 text-[13px] text-slate-800 outline-none transition focus:border-ring focus:ring-2 focus:ring-ring/30"
               placeholder="sales_reports"
               required
             />
@@ -355,10 +355,10 @@ function ReportsContent() {
           {folderError && <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{folderError}</p>}
 
           <div className="flex justify-end gap-3 pt-4">
-            <Button variant="outline" onClick={() => setShowFolderModal(false)} className="h-11 min-w-[120px] rounded-lg border border-slate-300 bg-white text-base font-medium text-slate-700">
+            <Button variant="outline" onClick={() => setShowFolderModal(false)} className="h-9 min-w-[96px] rounded-md border border-slate-300 bg-white text-[13px] font-medium text-slate-700">
               Cancel
             </Button>
-            <Button disabled={savingFolder} onClick={() => void createFolder()} className="h-11 min-w-[120px] rounded-lg bg-blue-600 text-base font-semibold text-white hover:bg-blue-700">
+            <Button disabled={savingFolder} onClick={() => void createFolder()} className="h-9 min-w-[96px] rounded-md bg-blue-600 text-[13px] font-medium text-white hover:bg-blue-700">
               {savingFolder ? "Saving..." : "Save"}
             </Button>
           </div>
@@ -377,12 +377,12 @@ function FolderTable({ folders, folderMenu, onMenuChange, onOpen, onRename, onDe
 }
 function MenuItem({ label, onClick, danger = false, disabled = false }: { label: string; onClick: () => void; danger?: boolean; disabled?: boolean }) {
   if (label === "Open" || label === "Export Excel" || label === "Export PDF") return null;
-  return <button type="button" disabled={disabled} className={`block w-full px-4 py-2.5 text-left text-sm ${disabled ? "cursor-not-allowed text-muted-foreground/50" : `hover:bg-muted ${danger ? "text-destructive" : ""}`}`} onClick={onClick}>{label}{disabled && <span className="ml-2 text-xs">Soon</span>}</button>;
+  return <button type="button" disabled={disabled} className={`block w-full px-3 py-1.5 text-left text-sm ${disabled ? "cursor-not-allowed text-muted-foreground/50" : `hover:bg-muted ${danger ? "text-destructive" : ""}`}`} onClick={onClick}>{label}{disabled && <span className="ml-2 text-xs">Soon</span>}</button>;
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-[1.05rem] font-semibold text-slate-800">{label}</label>
+      <label className="block text-[12px] font-semibold text-slate-800">{label}</label>
       {children}
     </div>
   );
@@ -391,9 +391,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+      <div className="w-full max-w-3xl rounded-md border border-slate-200 bg-white shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <h2 className="text-[2rem] font-semibold tracking-[-0.03em] text-slate-800">{title}</h2>
+          <h2 className="text-[16px] font-semibold tracking-[-0.03em] text-slate-800">{title}</h2>
           <button type="button" aria-label="Close" onClick={onClose} className="text-slate-500 hover:text-slate-700">
             <X className="h-6 w-6" />
           </button>
@@ -425,8 +425,8 @@ function CreateReportWizard({ categories, selectedCategory, onCategoryChange, se
           <div className="grid gap-4 md:grid-cols-[180px_1fr]">
             <aside className="space-y-1">{categories.map((category) => <button key={category} type="button" onClick={() => onCategoryChange(category)} className={`w-full rounded-md px-3 py-2 text-left text-sm ${selectedCategory === category ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"}`}>{category}</button>)}</aside>
             <main>
-              <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search Report Types..." className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary" /></div>
-              {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Loading report types...</p> : <div className="mt-3 grid gap-2">{reportTypes.map((type) => <button key={type.name} type="button" onClick={() => setSelectedType(type)} className={`flex items-center justify-between rounded-md border px-4 py-3 text-left text-sm ${selectedType?.name === type.name ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-muted"}`}><span className="font-medium">{type.label}</span><span className="text-xs text-muted-foreground">{type.category}</span></button>)}</div>}
+              <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search Report Types..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-[13px] outline-none focus:border-primary" /></div>
+              {loading ? <p className="py-10 text-center text-sm text-muted-foreground">Loading report types...</p> : <div className="mt-3 grid gap-2">{reportTypes.map((type) => <button key={type.name} type="button" onClick={() => setSelectedType(type)} className={`flex items-center justify-between rounded-md border px-4 py-2 text-left text-sm ${selectedType?.name === type.name ? "border-primary bg-primary/5 ring-1 ring-primary" : "hover:bg-muted"}`}><span className="font-medium">{type.label}</span><span className="text-xs text-muted-foreground">{type.category}</span></button>)}</div>}
             </main>
           </div>
         </div>
@@ -437,5 +437,5 @@ function CreateReportWizard({ categories, selectedCategory, onCategoryChange, se
 }
 
 function CreateReportModal({ categories, selectedCategory, onCategoryChange, search, onSearchChange, reportTypes, loading, onClose }: { categories: string[]; selectedCategory: string; onCategoryChange: (category: string) => void; search: string; onSearchChange: (value: string) => void; reportTypes: ReportType[]; loading: boolean; onClose: () => void }) {
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="flex max-h-[min(680px,calc(100vh-2rem))] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-card shadow-2xl"><div className="flex items-center justify-between border-b px-6 py-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reports</p><h2 className="text-xl font-semibold">Create Report</h2></div><button type="button" aria-label="Close" onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button></div><div className="grid min-h-0 flex-1 md:grid-cols-[190px_1fr]"><aside className="border-b bg-muted/30 p-3 md:border-b-0 md:border-r"><p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Category</p>{categories.map((category) => <button key={category} type="button" onClick={() => onCategoryChange(category)} className={`w-full rounded-md px-3 py-2 text-left text-sm ${selectedCategory === category ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"}`}>{category}</button>)}</aside><main className="min-h-0 overflow-y-auto p-5"><h3 className="text-lg font-semibold">Select a Report Type</h3><p className="mt-1 text-sm text-muted-foreground">Choose the data source for your report.</p><div className="relative mt-4"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search Report Types..." className="h-10 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" /></div><div className="mt-5 grid grid-cols-[1fr_120px] border-b px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><span>Report Type Name</span><span>Category</span></div>{loading ? <div className="flex items-center justify-center py-12 text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading report types...</div> : reportTypes.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">No report types found.</div> : reportTypes.map((type) => <Link key={type.name} href={`/reports/new?object=${encodeURIComponent(type.name)}`} onClick={onClose} className="grid grid-cols-[1fr_120px] items-center border-b px-3 py-3 text-sm transition hover:bg-muted"><span className="font-medium text-primary">{type.label}</span><span className="text-muted-foreground">{type.category}</span></Link>)}</main></div></div></div>;
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="flex max-h-[min(680px,calc(100vh-2rem))] w-full max-w-3xl flex-col overflow-hidden rounded-lg bg-card shadow-2xl"><div className="flex items-center justify-between border-b px-6 py-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reports</p><h2 className="text-xl font-semibold">Create Report</h2></div><button type="button" aria-label="Close" onClick={onClose}><X className="h-5 w-5 text-muted-foreground" /></button></div><div className="grid min-h-0 flex-1 md:grid-cols-[190px_1fr]"><aside className="border-b bg-muted/30 p-3 md:border-b-0 md:border-r"><p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Category</p>{categories.map((category) => <button key={category} type="button" onClick={() => onCategoryChange(category)} className={`w-full rounded-md px-3 py-2 text-left text-sm ${selectedCategory === category ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted"}`}>{category}</button>)}</aside><main className="min-h-0 overflow-y-auto p-5"><h3 className="text-lg font-semibold">Select a Report Type</h3><p className="mt-1 text-sm text-muted-foreground">Choose the data source for your report.</p><div className="relative mt-4"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Search Report Types..." className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-[13px] outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" /></div><div className="mt-5 grid grid-cols-[1fr_120px] border-b px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground"><span>Report Type Name</span><span>Category</span></div>{loading ? <div className="flex items-center justify-center py-12 text-sm text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading report types...</div> : reportTypes.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">No report types found.</div> : reportTypes.map((type) => <Link key={type.name} href={`/reports/new?object=${encodeURIComponent(type.name)}`} onClick={onClose} className="grid grid-cols-[1fr_120px] items-center border-b px-3 py-2 text-sm transition hover:bg-muted"><span className="font-medium text-primary">{type.label}</span><span className="text-muted-foreground">{type.category}</span></Link>)}</main></div></div></div>;
 }

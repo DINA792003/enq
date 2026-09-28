@@ -97,7 +97,7 @@ export default function ObjectEditPage() {
           </Link>
         </Button>
         <div>
-          <h1 className="text-2xl font-bold">Edit {metadata.label}</h1>
+          <h1 className="text-xl font-semibold">Edit {metadata.label}</h1>
           <p className="text-muted-foreground">
             {record.recordNumber || recordId}
           </p>

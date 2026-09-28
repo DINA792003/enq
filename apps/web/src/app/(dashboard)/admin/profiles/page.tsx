@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -61,8 +62,14 @@ const LEAD_STATUSES = [
   { value: "PROSPECT", label: "Prospect" },
   { value: "SITE_VISIT_SCHEDULED", label: "Site Visit Scheduled" },
   { value: "SITE_VISIT_HAPPENED", label: "Site Visit Happened" },
-  { value: "BOOKED", label: "Booked" },
+  { value: "SALES", label: "Sales" },
+  { value: "OPPORTUNITY", label: "Opportunity" },
+  { value: "QUOTATION", label: "Quotation" },
+  { value: "APPROVAL", label: "Approval" },
+  { value: "BOOKING", label: "Booking" },
+  { value: "DUPLICATE", label: "Duplicate" },
   { value: "LOST", label: "Lost" },
+  { value: "BOOKED", label: "Booked" },
 ] as const;
 
 interface Profile {
@@ -93,8 +100,9 @@ const statusColors: Record<string, string> = {
   inactive: "bg-gray-100 text-gray-800",
 };
 
-export default function ProfilesPage() {
+function ProfilesPageContent() {
   const { toast } = useToast();
+  const searchParams = useSearchParams();
 
   const [profiles, setProfiles] = React.useState<Profile[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -138,6 +146,16 @@ export default function ProfilesPage() {
   React.useEffect(() => {
     fetchProfiles();
   }, [fetchProfiles]);
+
+  React.useEffect(() => {
+    const profileName = searchParams.get("profile");
+    if (!profileName || profiles.length === 0) return;
+
+    const matchedProfile = profiles.find((profile) => profile.name === profileName);
+    if (matchedProfile) {
+      openEditDialog(matchedProfile);
+    }
+  }, [searchParams, profiles]);
 
   const filteredProfiles = React.useMemo(() => {
     if (!searchQuery) return profiles;
@@ -285,7 +303,7 @@ export default function ProfilesPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Profiles</h1>
+            <h1 className="text-xl font-bold">Profiles</h1>
             <p className="text-muted-foreground">Manage CRM profiles and their permissions</p>
           </div>
         </div>
@@ -303,7 +321,7 @@ export default function ProfilesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Profiles</h1>
+          <h1 className="text-xl font-bold">Profiles</h1>
           <p className="text-muted-foreground">Manage CRM profiles and their lead status access</p>
         </div>
         <Button onClick={openCreateDialog}>
@@ -321,7 +339,7 @@ export default function ProfilesPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Profiles</p>
-                <p className="text-2xl font-bold">{profiles.length}</p>
+                <p className="text-xl font-bold">{profiles.length}</p>
               </div>
             </div>
           </CardContent>
@@ -334,7 +352,7 @@ export default function ProfilesPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Active</p>
-                <p className="text-2xl font-bold">{profiles.filter((p) => p.status === "active").length}</p>
+                <p className="text-xl font-bold">{profiles.filter((p) => p.status === "active").length}</p>
               </div>
             </div>
           </CardContent>
@@ -347,7 +365,7 @@ export default function ProfilesPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Inactive</p>
-                <p className="text-2xl font-bold">{profiles.filter((p) => p.status === "inactive").length}</p>
+                <p className="text-xl font-bold">{profiles.filter((p) => p.status === "inactive").length}</p>
               </div>
             </div>
           </CardContent>
@@ -572,7 +590,7 @@ export default function ProfilesPage() {
                   <Switch
                     id="status"
                     checked={formData.status === "active"}
-                    onCheckedChange={(checked) =>
+                    onCheckedChange={(checked: boolean) =>
                       setFormData((f) => ({ ...f, status: checked ? "active" : "inactive" }))
                     }
                   />
@@ -675,5 +693,13 @@ export default function ProfilesPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ProfilesPage() {
+  return (
+    <React.Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading profiles...</div>}>
+      <ProfilesPageContent />
+    </React.Suspense>
   );
 }

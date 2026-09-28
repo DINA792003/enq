@@ -1,6 +1,8 @@
 import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { EffectivePermissionService } from '../services/effectivePermissions';
+import { getOpportunityVisibilityFilter, getScopeClause } from '../services/recordAccess';
 
 const router = Router();
 
@@ -105,7 +107,20 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       .filter((type) => searchConfig[type])
       .map(async (type) => {
         const config = searchConfig[type];
+        if (type === 'opportunities') {
+          const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user!, req.user!.id);
+          if (!EffectivePermissionService.hasPermissionIn(perms, 'OPPORTUNITY_READ')) return [];
+        }
         const where: any = { tenantId: req.tenantId!, ...config.whereExtra };
+        if (type === 'leads') {
+          const clause = await getScopeClause(req.user!, 'lead');
+          if (clause) where.AND = [clause];
+        }
+        if (type === 'tasks') {
+          const clause = await getScopeClause(req.user!, 'task');
+          if (clause) where.AND = [clause];
+        }
+        if (type === 'opportunities') Object.assign(where, await getOpportunityVisibilityFilter(req.tenantId!, req.user!.id, 'read'));
         if (status && type !== 'payments') where.status = status;
         if (owner && ['leads', 'opportunities', 'tasks'].includes(type)) where.ownerId = owner;
 
@@ -147,33 +162,48 @@ router.get('/quick', async (req: AuthRequest, res: Response) => {
     const searchTerm = q as string;
     const numLimit = Number(limit);
 
+    const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user!, req.user!.id);
+    const canReadOpportunities = EffectivePermissionService.hasPermissionIn(perms, 'OPPORTUNITY_READ');
+    const opportunityWhere = canReadOpportunities
+      ? await getOpportunityVisibilityFilter(req.tenantId!, req.user!.id, 'read')
+      : { id: { in: [] as string[] } };
+
+    const leadScope = await getScopeClause(req.user!, 'lead');
+    const taskScope = await getScopeClause(req.user!, 'task');
+
+    const leadWhere: any = {
+      tenantId: req.tenantId!,
+      OR: [
+        { leadNumber: { contains: searchTerm, mode: 'insensitive' } },
+        { firstName: { contains: searchTerm, mode: 'insensitive' } },
+        { lastName: { contains: searchTerm, mode: 'insensitive' } },
+        { phone: { contains: searchTerm } },
+      ],
+    };
+    if (leadScope) leadWhere.AND = [leadScope];
+
+    const taskWhere: any = {
+      tenantId: req.tenantId!,
+      title: { contains: searchTerm, mode: 'insensitive' },
+    };
+    if (taskScope) taskWhere.AND = [taskScope];
+
     const [leads, opportunities, tasks] = await Promise.all([
       prisma.lead.findMany({
-        where: {
-          tenantId: req.tenantId!,
-          OR: [
-            { leadNumber: { contains: searchTerm, mode: 'insensitive' } },
-            { firstName: { contains: searchTerm, mode: 'insensitive' } },
-            { lastName: { contains: searchTerm, mode: 'insensitive' } },
-            { phone: { contains: searchTerm } },
-          ],
-        },
+        where: leadWhere,
         select: { id: true, leadNumber: true, firstName: true, lastName: true, phone: true, status: true },
         take: numLimit,
       }),
       prisma.opportunity.findMany({
         where: {
-          tenantId: req.tenantId!,
+          ...opportunityWhere,
           name: { contains: searchTerm, mode: 'insensitive' },
         },
         select: { id: true, name: true, stage: true, amount: true },
         take: numLimit,
       }),
       prisma.task.findMany({
-        where: {
-          tenantId: req.tenantId!,
-          title: { contains: searchTerm, mode: 'insensitive' },
-        },
+        where: taskWhere,
         select: { id: true, title: true, status: true, priority: true },
         take: numLimit,
       }),

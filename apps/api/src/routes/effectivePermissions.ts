@@ -35,11 +35,11 @@ router.get('/user/:userId', requirePermission('USER_PERMISSION_READ'), async (re
 
     const summary = await EffectivePermissionService.getUserPermissionsSummary(req.params.userId);
 
-    const [profilePerms, permSetPerms, directPerms, legacyPerms] = await Promise.all([
-      EffectivePermissionService.getProfilePermissions(user.profileId),
-      EffectivePermissionService.getPermissionSetPermissions(req.params.userId),
+    const [profilePerms, permSetPerms, groupPerms, directPerms] = await Promise.all([
+      EffectivePermissionService.getProfilePermissions(user.profileId, req.tenantId!),
+      EffectivePermissionService.getPermissionSetPermissions(req.params.userId, req.tenantId!),
+      EffectivePermissionService.getPermissionSetGroupPermissions(req.params.userId, req.tenantId!),
       EffectivePermissionService.getDirectPermissions(req.params.userId),
-      EffectivePermissionService.getLegacyRolePermissions(req.params.userId),
     ]);
 
     res.json({
@@ -50,8 +50,8 @@ router.get('/user/:userId', requirePermission('USER_PERMISSION_READ'), async (re
         sources: {
           profile: profilePerms,
           permissionSets: permSetPerms,
+          permissionSetGroups: groupPerms,
           direct: directPerms,
-          legacyRoles: legacyPerms,
         },
       },
     });
@@ -68,15 +68,6 @@ router.get('/check/:permissionName', async (req: AuthRequest, res: Response) => 
     }
 
     if (req.user.isSuperAdmin) {
-      return res.json({ success: true, data: { hasPermission: true, permission: req.params.permissionName } });
-    }
-
-    const currentUser = await prisma.user.findFirst({
-      where: { id: req.user.id, tenantId: req.tenantId! },
-      select: { profile: { select: { isAdmin: true } } },
-    });
-
-    if (currentUser?.profile?.isAdmin) {
       return res.json({ success: true, data: { hasPermission: true, permission: req.params.permissionName } });
     }
 

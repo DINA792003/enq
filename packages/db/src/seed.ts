@@ -330,6 +330,11 @@ async function main() {
     });
 
     if (status === LeadStatus.SITE_VISIT_SCHEDULED || status === LeadStatus.SITE_VISIT_HAPPENED || status === LeadStatus.BOOKED) {
+      const svSeq = await prisma.sequence.upsert({
+        where: { tenantId_type: { tenantId: tenant.id, type: 'SITE_VISIT' } },
+        update: { nextValue: { increment: 1 } },
+        create: { tenantId: tenant.id, type: 'SITE_VISIT', nextValue: 1 },
+      });
       await prisma.siteVisit.create({
         data: {
           tenantId: tenant.id,
@@ -337,6 +342,7 @@ async function main() {
           projectId: project.id,
           assigneeId: presalesExec.id,
           creatorId: adminUser.id,
+          siteVisitNumber: `SV${String(svSeq.nextValue).padStart(6, '0')}`,
           scheduledAt: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000),
           completedAt: status !== LeadStatus.SITE_VISIT_SCHEDULED ? new Date() : null,
           status: status === LeadStatus.SITE_VISIT_SCHEDULED ? SiteVisitStatus.SCHEDULED : SiteVisitStatus.COMPLETED,

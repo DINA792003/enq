@@ -4,6 +4,12 @@ import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
 import { auditLog } from '../middleware/audit';
+import {
+  applyScope,
+  canAccessBooking,
+  canAccessLeadId,
+  getScopeClause,
+} from '../services/recordAccess';
 
 const router = Router();
 
@@ -43,7 +49,7 @@ router.get('/', authorize('Booking', 'read'), async (req: AuthRequest, res: Resp
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { tenantId };
+    let where: any = { tenantId };
     if (unitId) where.unitId = unitId;
     if (projectId) where.projectId = projectId;
     if (status) where.status = status;
@@ -53,6 +59,7 @@ router.get('/', authorize('Booking', 'read'), async (req: AuthRequest, res: Resp
         lte: new Date(endDate as string),
       };
     }
+    where = applyScope(where, await getScopeClause(req.user!, 'booking'));
 
     const [bookings, total] = await Promise.all([
       prisma.booking.findMany({
@@ -110,6 +117,10 @@ router.get('/:id', authorize('Booking', 'read'), async (req: AuthRequest, res: R
       return res.status(404).json({ success: false, error: 'Booking not found' });
     }
 
+    if (!(await canAccessBooking(req.user!, booking))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this booking' });
+    }
+
     res.json({ success: true, data: booking });
   } catch (error) {
     console.error('Get booking error:', error);
@@ -121,6 +132,10 @@ router.post('/', authorize('Booking', 'create'), async (req: AuthRequest, res: R
   try {
     const { tenantId, id: userId } = req.user!;
     const data = bookingSchema.parse(req.body);
+
+    if (data.leadId && !(await canAccessLeadId(req.user!, data.leadId))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked lead' });
+    }
 
     const bookingNumber = data.number || `BK-${Date.now().toString(36).toUpperCase()}`;
 
@@ -172,6 +187,10 @@ router.put('/:id', authorize('Booking', 'edit'), async (req: AuthRequest, res: R
       return res.status(404).json({ success: false, error: 'Booking not found' });
     }
 
+    if (!(await canAccessBooking(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this booking' });
+    }
+
     if (existing.status === 'CANCELLED' || existing.status === 'COMPLETED') {
       return res.status(400).json({ success: false, error: 'Cannot update cancelled or completed booking' });
     }
@@ -212,6 +231,10 @@ router.patch('/:id/confirm', authorize('Booking', 'edit'), async (req: AuthReque
 
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Booking not found' });
+    }
+
+    if (!(await canAccessBooking(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this booking' });
     }
 
     if (existing.status !== 'PENDING') {
@@ -272,6 +295,10 @@ router.patch('/:id/cancel', authorize('Booking', 'edit'), async (req: AuthReques
       return res.status(404).json({ success: false, error: 'Booking not found' });
     }
 
+    if (!(await canAccessBooking(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this booking' });
+    }
+
     if (existing.status === 'CANCELLED' || existing.status === 'COMPLETED') {
       return res.status(400).json({ success: false, error: 'Booking is already cancelled or completed' });
     }
@@ -300,6 +327,10 @@ router.delete('/:id', authorize('Booking', 'delete'), async (req: AuthRequest, r
 
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Booking not found' });
+    }
+
+    if (!(await canAccessBooking(req.user!, existing))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this booking' });
     }
 
     if (existing.status === 'CONFIRMED' || existing.status === 'COMPLETED') {

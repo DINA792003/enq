@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AuthProvider } from "@/contexts/auth-context";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
@@ -16,7 +17,7 @@ function ImpersonationBanner() {
   if (!user?.impersonatedBy) return null;
 
   return (
-    <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+    <div className="mb-3 flex items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] text-amber-950">
       <span>You are logged in as <strong>{user.firstName} {user.lastName}</strong>.</span>
       <Button size="sm" variant="outline" onClick={() => void stopImpersonating()}>
         <LogOut className="mr-2 h-4 w-4" />
@@ -24,6 +25,43 @@ function ImpersonationBanner() {
       </Button>
     </div>
   );
+}
+
+function DashboardAccessGuard({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { isLoading, isAuthenticated, isSuperAdmin, isAdmin, hasFullAccess, hasEffectivePermission } = useAuth();
+
+  const requiredPermission =
+    pathname === "/leads/new" ? "LEAD_CREATE" :
+    pathname.startsWith("/leads") ? "LEAD_READ" :
+    pathname.startsWith("/tasks") ? "TASK_READ" :
+    pathname.startsWith("/site-visits") ? "SITE_VISIT_READ" :
+    pathname.startsWith("/opportunities") ? "OPPORTUNITY_READ" :
+    pathname.startsWith("/quotations") ? "QUOTATION_READ" :
+    pathname.startsWith("/bookings") ? "BOOKING_READ" :
+    pathname.startsWith("/payments") ? "PAYMENT_READ" :
+    pathname.startsWith("/projects") ? "PROJECT_READ" :
+    pathname.startsWith("/reports") ? "REPORT_VIEW" :
+    null;
+
+  React.useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      router.replace("/login");
+    } else if (!isLoading && requiredPermission && !(hasFullAccess || hasEffectivePermission(requiredPermission))) {
+      router.replace("/home");
+    } else if (!isLoading && pathname.startsWith("/setup") && !isAdmin && !isSuperAdmin) {
+      router.replace("/home");
+    } else if (!isLoading && pathname.startsWith("/admin") && !isSuperAdmin) {
+      router.replace("/home");
+    }
+  }, [hasEffectivePermission, hasFullAccess, isAdmin, isLoading, isAuthenticated, isSuperAdmin, pathname, requiredPermission, router]);
+
+  if (isLoading || !isAuthenticated) return null;
+  if (requiredPermission && !(hasFullAccess || hasEffectivePermission(requiredPermission))) return null;
+  if (pathname.startsWith("/setup") && !isAdmin && !isSuperAdmin) return null;
+  if (pathname.startsWith("/admin") && !isSuperAdmin) return null;
+  return <>{children}</>;
 }
 
 export default function DashboardLayout({
@@ -38,11 +76,17 @@ export default function DashboardLayout({
       <div className="min-h-screen bg-background">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
         <div className="lg:pl-64">
-          <Header onMenuClick={() => setSidebarOpen(true)} />
-          <main className="p-4 md:p-6">
-            <Breadcrumb className="mb-4" />
+          <React.Suspense fallback={<div className="h-14" aria-hidden="true" />}>
+            <Header onMenuClick={() => setSidebarOpen(true)} />
+          </React.Suspense>
+          <main className="p-4">
+            <Breadcrumb className="mb-3" />
             <ImpersonationBanner />
-            {children}
+            <DashboardAccessGuard>
+              <React.Suspense fallback={<div className="min-h-[40vh]" aria-hidden="true" />}>
+                {children}
+              </React.Suspense>
+            </DashboardAccessGuard>
           </main>
         </div>
         <Chatbot />

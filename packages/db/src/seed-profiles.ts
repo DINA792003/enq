@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -36,6 +37,30 @@ const PROFILE_DEFINITIONS = [
   {
     name: 'Finance',
     description: 'Finance profile for payments and accounting visibility',
+    isAdmin: false,
+    isDefault: false,
+  },
+  {
+    name: 'SVC',
+    description: 'Service and site visit profile',
+    isAdmin: false,
+    isDefault: false,
+  },
+  {
+    name: 'CRM',
+    description: 'CRM conversion and booking profile',
+    isAdmin: false,
+    isDefault: false,
+  },
+  {
+    name: 'Manager',
+    description: 'Manager profile with team oversight',
+    isAdmin: false,
+    isDefault: false,
+  },
+  {
+    name: 'Recovery',
+    description: 'Recovery profile for lost lead follow-up',
     isAdmin: false,
     isDefault: false,
   },
@@ -98,12 +123,9 @@ const PROFILE_PERMISSIONS: Record<string, string[]> = {
   ],
   Presales: [
     'LEAD_READ',
-    'SITE_VISIT_READ',
-    'SITE_VISIT_CREATE',
-    'SITE_VISIT_UPDATE',
-    'PROJECT_READ',
-    'PROJECT_UPDATE',
-    'REPORT_VIEW',
+    'TASK_READ',
+    'TASK_CREATE',
+    'TASK_UPDATE',
   ],
   Finance: [
     'PAYMENT_READ',
@@ -115,6 +137,47 @@ const PROFILE_PERMISSIONS: Record<string, string[]> = {
     'FINANCE_MANAGE',
     'BOOKING_READ',
     'BOOKING_UPDATE',
+    'REPORT_VIEW',
+    'DASHBOARD_READ',
+  ],
+  SVC: [
+    'LEAD_READ',
+    'SITE_VISIT_READ',
+    'SITE_VISIT_CREATE',
+    'SITE_VISIT_UPDATE',
+    'TASK_READ',
+    'TASK_CREATE',
+    'TASK_UPDATE',
+    'DASHBOARD_READ',
+  ],
+  CRM: [
+    'OPPORTUNITY_READ',
+    'OPPORTUNITY_CREATE',
+    'OPPORTUNITY_UPDATE',
+    'QUOTATION_READ',
+    'QUOTATION_CREATE',
+    'QUOTATION_UPDATE',
+    'BOOKING_READ',
+    'BOOKING_CREATE',
+    'BOOKING_UPDATE',
+    'DASHBOARD_READ',
+  ],
+  Manager: [
+    'LEAD_READ',
+    'LEAD_CREATE',
+    'LEAD_UPDATE',
+    'LEAD_ASSIGN',
+    'OPPORTUNITY_READ',
+    'OPPORTUNITY_CREATE',
+    'OPPORTUNITY_UPDATE',
+    'SITE_VISIT_READ',
+    'SITE_VISIT_UPDATE',
+    'REPORT_VIEW',
+    'DASHBOARD_READ',
+  ],
+  Recovery: [
+    'LEAD_READ',
+    'LEAD_UPDATE',
     'REPORT_VIEW',
     'DASHBOARD_READ',
   ],
@@ -138,6 +201,11 @@ async function main() {
   if (!tenant) {
     throw new Error('Tenant dct-re not found. Run the DB seed first.');
   }
+
+  await prisma.tenant.update({
+    where: { id: tenant.id },
+    data: { maxTotalUsers: 50, maxAdminUsers: 10 },
+  });
 
   const createdProfiles: Record<string, { id: string; name: string }> = {};
 
@@ -204,6 +272,168 @@ async function main() {
     if (!profile) {
       console.warn(`Missing profile for permission assignment: ${profileName}`);
       continue;
+    }
+
+    if (profileName === 'Admin') {
+    const objectNames = ['Lead', 'SiteVisit', 'Opportunity', 'Quotation', 'Booking', 'Payment', 'Project', 'Task', 'FollowUp', 'Activity'];
+    const denied = { create: false, read: false, edit: false, delete: false, viewAll: false, modifyAll: false };
+    const permissions = (create = false, read = false, edit = false) => ({
+      create,
+      read,
+      edit,
+      delete: false,
+      viewAll: false,
+      modifyAll: false,
+    });
+    const objectPermissions: Record<string, Record<string, Record<string, boolean>>> = {
+      Admin: Object.fromEntries(objectNames.map((objectName) => [objectName, { create: true, read: true, edit: true, delete: true, viewAll: true, modifyAll: true }])),
+      Presales: {
+        Lead: permissions(false, true, false),
+        Task: permissions(true, true, true),
+      },
+      SVC: {
+        Lead: permissions(false, true, false),
+        SiteVisit: permissions(true, true, true),
+        Task: permissions(true, true, true),
+      },
+      Sales: {
+        Lead: permissions(true, true, true),
+        SiteVisit: permissions(true, true, true),
+        Opportunity: permissions(true, true, true),
+        Quotation: permissions(true, true, true),
+        Task: permissions(true, true, true),
+      },
+      CRM: {
+        Opportunity: permissions(true, true, true),
+        Quotation: permissions(true, true, true),
+        Booking: permissions(true, true, true),
+      },
+      Finance: {
+        Booking: permissions(false, true, true),
+        Payment: permissions(true, true, true),
+        Report: permissions(false, true, false),
+      },
+      Manager: {
+        Lead: permissions(true, true, true),
+        Opportunity: permissions(true, true, true),
+        SiteVisit: permissions(false, true, true),
+        Task: permissions(true, true, true),
+        Report: permissions(false, true, false),
+      },
+      Recovery: {
+        Lead: permissions(false, true, true),
+      },
+    };
+    const roleByProfile = new Map<string, { id: string }>();
+    for (const profileName of Object.keys(objectPermissions)) {
+      const role = await prisma.role.upsert({
+        where: { tenantId_name: { tenantId: tenant.id, name: `Test ${profileName}` } },
+        update: {},
+        create: {
+          tenantId: tenant.id,
+          name: `Test ${profileName}`,
+          description: `Seeded test role for ${profileName}`,
+          isSystem: false,
+        },
+        select: { id: true },
+      });
+      roleByProfile.set(profileName, role);
+      const profileObjectPermissions = objectPermissions[profileName];
+      for (const objectName of objectNames) {
+        const objectPermission = profileObjectPermissions[objectName] || denied;
+        const permissionSet = await prisma.permissionSet.upsert({
+          where: { tenantId_profileId_objectName: { tenantId: tenant.id, profileId: createdProfiles[profileName].id, objectName } },
+          update: { permissions: objectPermission },
+          create: {
+            tenantId: tenant.id,
+            profileId: createdProfiles[profileName].id,
+            name: `Test ${profileName} - ${objectName}`,
+            objectName,
+            permissions: objectPermission,
+          },
+          select: { id: true },
+        });
+        await prisma.permissionSetRole.upsert({
+          where: { permissionSetId_roleId: { permissionSetId: permissionSet.id, roleId: role.id } },
+          update: {},
+          create: { permissionSetId: permissionSet.id, roleId: role.id },
+        });
+      }
+    }
+
+    const testPassword = 'DctTest@123';
+    const passwordHash = await bcrypt.hash(testPassword, 12);
+    const profileUsers = [
+      ['Admin', 'admin.test'], ['Presales', 'presales.test'], ['SVC', 'svc.test'],
+      ['Sales', 'sales.test'], ['CRM', 'crm.test'], ['Finance', 'finance.test'],
+      ['Manager', 'manager.test'], ['Recovery', 'recovery.test'],
+    ] as const;
+    const seededUsers = new Map<string, { id: string; profileName: string }>();
+    for (const [profileName, prefix] of profileUsers) {
+      const profile = createdProfiles[profileName];
+      const role = roleByProfile.get(profileName);
+      if (!profile || !role) throw new Error(`Missing seeded profile or role: ${profileName}`);
+      for (let index = 1; index <= 3; index += 1) {
+        const email = `${prefix}${index}@dctcrm.com`;
+        const user = await prisma.user.upsert({
+          where: { tenantId_email: { tenantId: tenant.id, email } },
+          update: {
+            passwordHash,
+            firstName: prefix.split('.')[0].replace(/^./, (value) => value.toUpperCase()),
+            lastName: `Test${index}`,
+            isActive: true,
+            profileId: profile.id,
+            roleId: role.id,
+          },
+          create: {
+            tenantId: tenant.id,
+            email,
+            passwordHash,
+            firstName: prefix.split('.')[0].replace(/^./, (value) => value.toUpperCase()),
+            lastName: `Test${index}`,
+            isActive: true,
+            profileId: profile.id,
+            roleId: role.id,
+          },
+          select: { id: true },
+        });
+        await prisma.userRole.upsert({
+          where: { userId_roleId: { userId: user.id, roleId: role.id } },
+          update: {},
+          create: { userId: user.id, roleId: role.id },
+        });
+        seededUsers.set(email, { id: user.id, profileName });
+      }
+    }
+
+    for (const pool of ['PRESALES', 'SVC', 'SALES'] as const) {
+      const profileName = pool === 'PRESALES' ? 'Presales' : pool === 'SVC' ? 'SVC' : 'Sales';
+      const config = await prisma.roundRobinConfig.upsert({
+        where: { tenantId_poolType: { tenantId: tenant.id, poolType: pool } },
+        update: { isActive: true, profileName },
+        create: {
+          tenantId: tenant.id,
+          poolType: pool,
+          name: `${profileName} Test Round Robin`,
+          description: `Seeded ${profileName} test assignment pool`,
+          profileName,
+          isActive: true,
+        },
+      });
+      void config;
+      for (let index = 1; index <= 3; index += 1) {
+        const email = `${profileName.toLowerCase()}.test${index}@dctcrm.com`;
+        const user = seededUsers.get(email);
+        if (!user) throw new Error(`Missing Round Robin test user: ${email}`);
+        await prisma.roundRobinMember.upsert({
+          where: { tenantId_userId_poolType: { tenantId: tenant.id, userId: user.id, poolType: pool } },
+          update: { isActive: true },
+          create: { tenantId: tenant.id, userId: user.id, poolType: pool, isActive: true },
+        });
+      }
+    }
+
+    console.log(`Seeded ${seededUsers.size} deterministic test users with password ${testPassword}`);
     }
 
     const permissionIds = await prisma.permission.findMany({

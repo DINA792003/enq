@@ -159,7 +159,7 @@ export default function CompaniesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Companies</h1>
+          <h1 className="text-xl font-semibold">Companies</h1>
           <p className="text-muted-foreground">Manage platform companies and tenants</p>
         </div>
         <Button onClick={() => router.push("/admin/companies/new")}>
@@ -184,14 +184,14 @@ export default function CompaniesPage() {
               value={search}
               onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
               placeholder="Search companies..."
-              className="w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm"
+              className="h-9 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm"
             />
           </div>
         </div>
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="">All Status</option>
           <option value="true">Active</option>
@@ -205,7 +205,7 @@ export default function CompaniesPage() {
             setSortOrder(order);
             setCurrentPage(1);
           }}
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="h-9 rounded-md border border-input bg-background px-3 py-2 text-sm"
         >
           <option value="createdAt-desc">Newest First</option>
           <option value="createdAt-asc">Oldest First</option>

@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
 import { auditLog } from '../middleware/audit';
+import { getOpportunityVisibilityFilter } from '../services/recordAccess';
 
 const router = Router();
 
@@ -15,7 +16,7 @@ const opportunitySchema = z.object({
   ownerId: z.string().optional(),
   queueId: z.string().optional(),
   projectId: z.string().optional(),
-  stage: z.enum(['PROSPECTING', 'QUALIFICATION', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST']).optional(),
+  stage: z.enum(['PROSPECTING', 'QUALIFICATION', 'NEEDS_ANALYSIS', 'PROPOSAL', 'NEGOTIATION', 'CLOSED_WON', 'CLOSED_LOST']).optional(),
   amount: z.number().min(0).optional(),
   expectedCloseDate: z.string().datetime().optional(),
   probability: z.number().min(0).max(100).optional(),
@@ -44,7 +45,7 @@ router.get('/', authorize('Opportunity', 'read'), async (req: AuthRequest, res: 
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { tenantId };
+    const where: any = await getOpportunityVisibilityFilter(tenantId, req.user!.id, 'read');
     if (stage) where.stage = stage;
     if (leadId) where.leadId = leadId;
     if (ownerId) where.ownerId = ownerId;
@@ -96,7 +97,7 @@ router.get('/:id', authorize('Opportunity', 'read'), async (req: AuthRequest, re
     const { tenantId } = req.user!;
 
     const opportunity = await prisma.opportunity.findFirst({
-      where: { id: req.params.id, tenantId },
+      where: { ...(await getOpportunityVisibilityFilter(tenantId, req.user!.id, 'read')), id: req.params.id },
       include: {
         lead: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
         owner: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -124,6 +125,16 @@ router.post('/', authorize('Opportunity', 'create'), async (req: AuthRequest, re
   try {
     const { tenantId, id: userId } = req.user!;
     const data = opportunitySchema.parse(req.body);
+
+    const relationChecks = await Promise.all([
+      data.ownerId ? prisma.user.count({ where: { id: data.ownerId, tenantId, isActive: true } }) : 1,
+      data.leadId ? prisma.lead.count({ where: { id: data.leadId, tenantId } }) : 1,
+      data.queueId ? prisma.queue.count({ where: { id: data.queueId, tenantId, isActive: true } }) : 1,
+      data.projectId ? prisma.project.count({ where: { id: data.projectId, tenantId, isActive: true } }) : 1,
+    ]);
+    if (relationChecks.some((count) => count !== 1)) {
+      return res.status(400).json({ success: false, error: 'One or more related records are invalid for this tenant' });
+    }
 
     const opportunity = await prisma.opportunity.create({
       data: {
@@ -173,6 +184,22 @@ router.put('/:id', authorize('Opportunity', 'edit'), async (req: AuthRequest, re
 
     const data = updateOpportunitySchema.parse(req.body);
 
+    const visible = await prisma.opportunity.findFirst({
+      where: { ...(await getOpportunityVisibilityFilter(tenantId, userId, 'edit')), id: req.params.id },
+      select: { id: true },
+    });
+    if (!visible) return res.status(403).json({ success: false, error: 'You do not have edit access to this opportunity' });
+
+    const relationChecks = await Promise.all([
+      data.ownerId ? prisma.user.count({ where: { id: data.ownerId, tenantId, isActive: true } }) : 1,
+      data.leadId ? prisma.lead.count({ where: { id: data.leadId, tenantId } }) : 1,
+      data.queueId ? prisma.queue.count({ where: { id: data.queueId, tenantId, isActive: true } }) : 1,
+      data.projectId ? prisma.project.count({ where: { id: data.projectId, tenantId, isActive: true } }) : 1,
+    ]);
+    if (relationChecks.some((count) => count !== 1)) {
+      return res.status(400).json({ success: false, error: 'One or more related records are invalid for this tenant' });
+    }
+
     const opportunity = await prisma.opportunity.update({
       where: { id: req.params.id },
       data: {
@@ -196,19 +223,22 @@ router.put('/:id', authorize('Opportunity', 'edit'), async (req: AuthRequest, re
 router.patch('/:id/stage', authorize('Opportunity', 'edit'), async (req: AuthRequest, res: Response) => {
   try {
     const { tenantId, id: userId } = req.user!;
-    const { stage, lostReason } = req.body;
 
     const existing = await prisma.opportunity.findFirst({
-      where: { id: req.params.id, tenantId },
+      where: { ...(await getOpportunityVisibilityFilter(tenantId, userId, 'edit')), id: req.params.id },
     });
 
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Opportunity not found' });
     }
 
-    const updateData: any = { stage };
-    if (stage === 'CLOSED_LOST' && lostReason) {
-      updateData.lostReason = lostReason;
+    const parsedStage = z.object({
+      stage: opportunitySchema.shape.stage.unwrap(),
+      lostReason: z.string().max(500).optional(),
+    }).parse(req.body);
+    const updateData: any = { stage: parsedStage.stage };
+    if (parsedStage.stage === 'CLOSED_LOST' && parsedStage.lostReason) {
+      updateData.lostReason = parsedStage.lostReason;
     }
 
     const opportunity = await prisma.opportunity.update({
@@ -216,7 +246,7 @@ router.patch('/:id/stage', authorize('Opportunity', 'edit'), async (req: AuthReq
       data: updateData,
     });
 
-    await auditLog(tenantId, userId, 'UPDATE', 'Opportunity', opportunity.id, existing, { stage, lostReason });
+    await auditLog(tenantId, userId, 'UPDATE', 'Opportunity', opportunity.id, existing, parsedStage);
 
     res.json({ success: true, data: opportunity });
   } catch (error) {
@@ -230,7 +260,7 @@ router.delete('/:id', authorize('Opportunity', 'delete'), async (req: AuthReques
     const { tenantId, id: userId } = req.user!;
 
     const existing = await prisma.opportunity.findFirst({
-      where: { id: req.params.id, tenantId },
+      where: { ...(await getOpportunityVisibilityFilter(tenantId, userId, 'delete')), id: req.params.id },
     });
 
     if (!existing) {

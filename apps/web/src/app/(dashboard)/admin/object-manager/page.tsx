@@ -123,7 +123,7 @@ export default function ObjectManagerPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Object Manager</h1>
+          <h1 className="text-xl font-semibold">Object Manager</h1>
           <p className="text-muted-foreground">
             Create and manage custom objects for your CRM
           </p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { formatDate, formatDateTime } from "@/lib/date-format";
+import { crmLocalDateTimeToDate } from "@dct-crm/shared";
 
 import * as React from "react";
 
@@ -8,7 +9,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import { useAuth } from "@/contexts/auth-context";
 
-import { leadApi, siteVisitApi, opportunityApi, activityApi, taskApi, followUpApi, objectManagerApi, projectApi } from "@/lib/api";
+import { leadApi, siteVisitApi, opportunityApi, activityApi, taskApi, followUpApi, objectManagerApi, projectApi, unitApi, quotationApi, bookingApi } from "@/lib/api";
 
 import LayoutDrivenForm from "@/components/admin/layout-driven-form";
 
@@ -160,7 +161,7 @@ interface LeadData {
 export default function LeadDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { profile, user, isLoading: authLoading, hasPermission, hasEffectivePermission } = useAuth();
+  const { profile, user, isLoading: authLoading, hasPermission, hasEffectivePermission, isAdmin, isSuperAdmin } = useAuth();
   const { toast } = useToast();
   const leadId = params.id as string;
 
@@ -173,10 +174,6 @@ export default function LeadDetailPage() {
   const [recoveryNote, setRecoveryNote] = React.useState("");
   const [layout, setLayout] = React.useState<any>(null);
   const [fields, setFields] = React.useState<any[]>([]);
-
-  const [statusNote, setStatusNote] = React.useState("");
-  const [statusDialogOpen, setStatusDialogOpen] = React.useState(false);
-  const [pendingStatus, setPendingStatus] = React.useState("");
 
   const [followUpDialogOpen, setFollowUpDialogOpen] = React.useState(false);
   const [followUpNote, setFollowUpNote] = React.useState("");
@@ -213,20 +210,75 @@ export default function LeadDetailPage() {
   const [editFieldErrors, setEditFieldErrors] = React.useState<Record<string, string>>({});
   const [editReason, setEditReason] = React.useState("");
 
+  const [revisitDialogOpen, setRevisitDialogOpen] = React.useState(false);
+  const [revisitReason, setRevisitReason] = React.useState("");
+  const [revisitDate, setRevisitDate] = React.useState("");
+  const [revisitTime, setRevisitTime] = React.useState("");
+  const [revisitProjectId, setRevisitProjectId] = React.useState("");
+  const [revisitNote, setRevisitNote] = React.useState("");
+
+  const [cancelSvDialogOpen, setCancelSvDialogOpen] = React.useState(false);
+  const [cancelSvReason, setCancelSvReason] = React.useState("");
+
+  const [completeSvDialogOpen, setCompleteSvDialogOpen] = React.useState(false);
+  const [completeSvFeedback, setCompleteSvFeedback] = React.useState("");
+  const [completeSvNotes, setCompleteSvNotes] = React.useState("");
+  const [completeSvTime, setCompleteSvTime] = React.useState("");
+  const [completeSvRating, setCompleteSvRating] = React.useState("");
+
+  const [detailDialogOpen, setDetailDialogOpen] = React.useState(false);
+  const [detailItem, setDetailItem] = React.useState<{ kind: "task" | "followup" | "note" | "activity"; data: any } | null>(null);
+
+  const [createOppDialogOpen, setCreateOppDialogOpen] = React.useState(false);
+  const [oppName, setOppName] = React.useState("");
+  const [oppAmount, setOppAmount] = React.useState("");
+  const [oppDescription, setOppDescription] = React.useState("");
+  const [oppProjectId, setOppProjectId] = React.useState("");
+  const [oppUnitId, setOppUnitId] = React.useState("");
+  const [oppUnits, setOppUnits] = React.useState<any[]>([]);
+  const [oppUnitsLoading, setOppUnitsLoading] = React.useState(false);
+
+  const [createQuoteDialogOpen, setCreateQuoteDialogOpen] = React.useState(false);
+  const [quoteDescription, setQuoteDescription] = React.useState("");
+  const [quoteUnitPrice, setQuoteUnitPrice] = React.useState("");
+
+  const [createBookingDialogOpen, setCreateBookingDialogOpen] = React.useState(false);
+  const [bookingProjectId, setBookingProjectId] = React.useState("");
+  const [bookingUnitId, setBookingUnitId] = React.useState("");
+  const [bookingAmount, setBookingAmount] = React.useState("");
+  const [ownerDialogOpen, setOwnerDialogOpen] = React.useState(false);
+  const [ownerCandidates, setOwnerCandidates] = React.useState<any[]>([]);
+  const [newOwnerId, setNewOwnerId] = React.useState("");
+  const [ownerChangeReason, setOwnerChangeReason] = React.useState("");
+
   const fetchLead = React.useCallback(async () => {
     try {
       setIsLoading(true);
-      const [leadRes, layoutRes, fieldsRes] = await Promise.all([
+      const [leadResult, layoutResult, fieldsResult] = await Promise.allSettled([
         leadApi.get(leadId),
         objectManagerApi.getDefaultLayout("Lead"),
         objectManagerApi.listFields("Lead", { includeSystem: true }),
       ]);
-      if (leadRes.data.success && leadRes.data.data) {
-        setLead(leadRes.data.data);
+
+      if (leadResult.status === "fulfilled" && leadResult.value.data?.success && leadResult.value.data.data) {
+        setLead(leadResult.value.data.data);
+      } else {
+        const errorMessage = leadResult.status === "rejected"
+          ? "Failed to load lead"
+          : leadResult.value?.data?.error || "Lead not found";
+        setLead(null);
+        toast({ title: "Error", description: errorMessage, variant: "destructive" as any });
       }
-      setLayout(layoutRes.data.data);
-      setFields(fieldsRes.data.data || []);
+
+      if (layoutResult.status === "fulfilled") {
+        setLayout(layoutResult.value.data?.data ?? null);
+      }
+
+      if (fieldsResult.status === "fulfilled") {
+        setFields(fieldsResult.value.data?.data || []);
+      }
     } catch {
+      setLead(null);
       toast({ title: "Error", description: "Failed to load lead", variant: "destructive" as any });
     } finally {
       setIsLoading(false);
@@ -269,28 +321,101 @@ export default function LeadDetailPage() {
   }, [activeTab, auditLogs.length, auditLoading, fetchAuditHistory]);
 
   React.useEffect(() => {
-    if (siteVisitDialogOpen) {
+    if (siteVisitDialogOpen || revisitDialogOpen || createBookingDialogOpen || createOppDialogOpen) {
       projectApi.list({ limit: 100 }).then((res) => {
         setProjects(res.data.data || []);
       });
     }
-  }, [siteVisitDialogOpen]);
+  }, [siteVisitDialogOpen, revisitDialogOpen, createBookingDialogOpen, createOppDialogOpen]);
 
-  const profileName = profile?.name?.toLowerCase() || "";
-  const isAdminOrManager = profileName.includes("admin") || profileName.includes("manager");
-  const isPresales = profileName.includes("presales");
-  const isSVC = profileName.includes("svc") || profileName.includes("site visit");
-  const isSales = profileName.includes("sales");
-  const isCRM = profileName.includes("crm");
-  const isFinance = profileName.includes("finance");
-  const isRecovery = profileName.includes("recovery");
+  React.useEffect(() => {
+    if (!createOppDialogOpen || !oppProjectId) {
+      setOppUnits([]);
+      setOppUnitId("");
+      return;
+    }
+
+    let cancelled = false;
+    setOppUnitsLoading(true);
+    unitApi.list({ projectId: oppProjectId, status: "AVAILABLE", limit: 100 }).then((res) => {
+      if (!cancelled) {
+        setOppUnits(res.data.data || []);
+      }
+    }).catch((err) => {
+      if (!cancelled) {
+        setOppUnits([]);
+        toast({
+          title: "Error",
+          description: err?.response?.data?.error || "Failed to load available units",
+          variant: "destructive" as any,
+        });
+      }
+    }).finally(() => {
+      if (!cancelled) setOppUnitsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createOppDialogOpen, oppProjectId, toast]);
+
+  const profileNameLower = profile?.name?.toLowerCase() || "";
+  const isAdminOrManager = profileNameLower.includes("admin") || profileNameLower.includes("manager");
   const canEditLead =
     hasPermission("Lead", "edit") ||
     hasEffectivePermission("LEAD_UPDATE") ||
     hasEffectivePermission("FULL_SYSTEM_ACCESS") ||
     isAdminOrManager;
+  const canChangeOwner = hasPermission("Lead", "edit");
 
   const status = lead?.status || "";
+
+  const openOwnerDialog = async () => {
+    if (!lead) return;
+    setIsActionLoading(true);
+    try {
+      const response = await leadApi.ownerCandidates(lead.id);
+      setOwnerCandidates(response.data.data || []);
+      setNewOwnerId("");
+      setOwnerChangeReason("");
+      setOwnerDialogOpen(true);
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.response?.data?.error || "Failed to load eligible owners",
+        variant: "destructive" as any,
+      });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const changeOwner = async () => {
+    if (!newOwnerId) {
+      toast({ title: "Validation", description: "New owner is required", variant: "destructive" as any });
+      return;
+    }
+    if (!ownerChangeReason.trim()) {
+      toast({ title: "Validation", description: "Reason is required", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      await leadApi.changeOwner(leadId, newOwnerId, ownerChangeReason.trim());
+      setOwnerDialogOpen(false);
+      toast({ title: "Success", description: "Lead owner changed successfully" });
+      await fetchLead();
+      if (activeTab === "audit-history") await fetchAuditHistory(1);
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err?.response?.data?.error || "Failed to change lead owner",
+        variant: "destructive" as any,
+      });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
 
   const startEdit = () => {
     if (!lead) return;
@@ -357,50 +482,6 @@ export default function LeadDetailPage() {
     } finally {
       setIsActionLoading(false);
     }
-  };
-
-  const handleAction = async (action: () => Promise<void>, label: string) => {
-    setIsActionLoading(true);
-    try {
-      await action();
-      await fetchLead();
-      if (activeTab === "audit-history") {
-        fetchAuditHistory(1);
-      }
-    } catch {
-      toast({ title: "Error", description: `${label} failed`, variant: "destructive" as any });
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  const handleStatusUpdateWithNote = async () => {
-    if (!statusNote.trim()) {
-      toast({ title: "Validation", description: "A note/reason is required for status change", variant: "destructive" as any });
-      return;
-    }
-    setIsActionLoading(true);
-    try {
-      await leadApi.updateStatus(leadId, pendingStatus, statusNote);
-      toast({ title: "Success", description: `Status updated to ${STATUS_LABELS[pendingStatus] || pendingStatus}` });
-      setStatusDialogOpen(false);
-      setStatusNote("");
-      setPendingStatus("");
-      await fetchLead();
-      if (activeTab === "audit-history") {
-        fetchAuditHistory(1);
-      }
-    } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.error || "Status update failed", variant: "destructive" as any });
-    } finally {
-      setIsActionLoading(false);
-    }
-  };
-
-  const openStatusDialog = (newStatus: string) => {
-    setPendingStatus(newStatus);
-    setStatusNote("");
-    setStatusDialogOpen(true);
   };
 
   const handlePushToSVC = async () => {
@@ -551,33 +632,280 @@ export default function LeadDetailPage() {
     }
   };
 
+  const getActiveSiteVisit = () => {
+    const visits = lead?.siteVisits || [];
+    return (
+      visits.find((sv: any) => String(sv.status).toUpperCase() === "SCHEDULED") ||
+      visits[0] ||
+      null
+    );
+  };
+
+  const handleRevisit = async () => {
+    const activeSv = getActiveSiteVisit();
+    if (!revisitReason.trim()) {
+      toast({ title: "Validation", description: "A reason is required for revisit", variant: "destructive" as any });
+      return;
+    }
+    if (!revisitDate || !revisitTime) {
+      toast({ title: "Validation", description: "Visit date and time are required", variant: "destructive" as any });
+      return;
+    }
+    if (!revisitProjectId) {
+      toast({ title: "Validation", description: "Project is required", variant: "destructive" as any });
+      return;
+    }
+    if (!activeSv) {
+      toast({ title: "Error", description: "No site visit found to revisit", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      const scheduledAt = crmLocalDateTimeToDate(revisitDate, revisitTime).toISOString();
+      await siteVisitApi.revisit(activeSv.id, {
+        reason: revisitReason.trim(),
+        scheduledAt,
+        projectId: revisitProjectId,
+        notes: revisitNote || undefined,
+      });
+      toast({ title: "Success", description: "Revisit site visit created" });
+      setRevisitDialogOpen(false);
+      setRevisitReason("");
+      setRevisitDate("");
+      setRevisitTime("");
+      setRevisitProjectId("");
+      setRevisitNote("");
+      await fetchLead();
+      if (activeTab === "audit-history") {
+        fetchAuditHistory(1);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to create revisit", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleCancelSiteVisit = async () => {
+    const activeSv = getActiveSiteVisit();
+    if (!cancelSvReason.trim()) {
+      toast({ title: "Validation", description: "A reason is required to cancel", variant: "destructive" as any });
+      return;
+    }
+    if (!activeSv) {
+      toast({ title: "Error", description: "No scheduled site visit found", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      await siteVisitApi.cancel(activeSv.id, cancelSvReason.trim());
+      toast({ title: "Success", description: "Site visit cancelled" });
+      setCancelSvDialogOpen(false);
+      setCancelSvReason("");
+      await fetchLead();
+      if (activeTab === "audit-history") {
+        fetchAuditHistory(1);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to cancel site visit", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleCompleteSiteVisit = async () => {
+    const activeSv = getActiveSiteVisit();
+    if (!activeSv) {
+      toast({ title: "Error", description: "No scheduled site visit found", variant: "destructive" as any });
+      return;
+    }
+    if (!completeSvTime || !completeSvFeedback.trim() || !completeSvNotes.trim()) {
+      toast({ title: "Validation", description: "Completion time, customer feedback, and notes are required", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      await siteVisitApi.complete(activeSv.id, {
+        completedAt: crmLocalDateTimeToDate(completeSvTime.split("T")[0], completeSvTime.split("T")[1]).toISOString(),
+        customerFeedback: completeSvFeedback.trim(),
+        completionNotes: completeSvNotes.trim(),
+      });
+      toast({ title: "Success", description: "Site visit marked as happened" });
+      setCompleteSvDialogOpen(false);
+      setCompleteSvFeedback("");
+      setCompleteSvNotes("");
+      setCompleteSvTime("");
+      setCompleteSvRating("");
+      await fetchLead();
+      if (activeTab === "audit-history") {
+        fetchAuditHistory(1);
+      }
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to complete site visit", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleCreateOpportunity = async () => {
+    if (!oppName.trim()) {
+      toast({ title: "Validation", description: "Opportunity name is required", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      const response = await leadApi.convert(leadId, {
+        name: oppName.trim(),
+        projectId: oppProjectId || undefined,
+        unitId: oppUnitId || undefined,
+        amount: oppAmount ? Number(oppAmount) : undefined,
+        description: oppDescription || undefined,
+      });
+      const result = response.data.data;
+      const oppNumber = result?.opportunity?.opportunityNumber;
+      const ownerName = [result?.opportunity?.owner?.firstName, result?.opportunity?.owner?.lastName]
+        .filter(Boolean)
+        .join(" ");
+      const fallbackNote = result?.ownerFallback ? " (Admin fallback)" : "";
+      toast({
+        title: "Lead converted",
+        description: `${oppNumber ? `${oppNumber} created` : "Opportunity created"}${ownerName ? ` — owner: ${ownerName}` : ""}${fallbackNote}. Lead status: BOOKED`,
+      });
+      setCreateOppDialogOpen(false);
+      setOppName("");
+      setOppAmount("");
+      setOppDescription("");
+      setOppProjectId("");
+      setOppUnitId("");
+      setOppUnits([]);
+      await fetchLead();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to create opportunity", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleCreateQuotation = async () => {
+    if (!quoteDescription.trim() || !quoteUnitPrice) {
+      toast({ title: "Validation", description: "Description and unit price are required", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      const oppId = lead?.opportunities?.[0]?.id;
+      await quotationApi.create({
+        leadId,
+        opportunityId: oppId,
+        projectId: lead?.project?.id,
+        items: [
+          {
+            description: quoteDescription.trim(),
+            quantity: 1,
+            unitPrice: Number(quoteUnitPrice),
+          },
+        ],
+      });
+      toast({ title: "Success", description: "Quotation created" });
+      setCreateQuoteDialogOpen(false);
+      setQuoteDescription("");
+      setQuoteUnitPrice("");
+      await fetchLead();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to create quotation", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleCreateBooking = async () => {
+    if (!bookingProjectId || !bookingUnitId || !bookingAmount) {
+      toast({ title: "Validation", description: "Project, unit, and amount are required", variant: "destructive" as any });
+      return;
+    }
+    setIsActionLoading(true);
+    try {
+      const oppId = lead?.opportunities?.[0]?.id;
+      await bookingApi.create({
+        leadId,
+        opportunityId: oppId,
+        projectId: bookingProjectId,
+        unitId: bookingUnitId,
+        ownerId: lead?.owner?.id,
+        totalAmount: Number(bookingAmount),
+      });
+      toast({ title: "Success", description: "Booking created" });
+      setCreateBookingDialogOpen(false);
+      setBookingProjectId("");
+      setBookingUnitId("");
+      setBookingAmount("");
+      await fetchLead();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.response?.data?.error || "Failed to create booking", variant: "destructive" as any });
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   const getWorkflowActions = (): { label: string; onClick: () => void; variant?: "default" | "outline" | "destructive" | "secondary" }[] => {
     const actions: { label: string; onClick: () => void; variant?: "default" | "outline" | "destructive" | "secondary" }[] = [];
 
-    const canAct = (roleCheck: boolean, statuses: string[]) =>
-      (isAdminOrManager || roleCheck) && statuses.includes(status);
+    const canAct = canEditLead;
+    if (!canAct) return actions;
 
-    if (canAct(isPresales, ["NEW", "INCOMING"])) {
-      if (status === "INCOMING") {
-        actions.push({ label: "Push to SVC", onClick: () => setPushSvcDialogOpen(true), variant: "default" });
-        actions.push({ label: "Move to Recovery", onClick: () => setRecoveryDialogOpen(true), variant: "destructive" });
-      }
+    const visits = lead?.siteVisits || [];
+    const activeSiteVisit =
+      visits.find((sv: any) => String(sv.status).toUpperCase() === "SCHEDULED") || null;
+    const latestSiteVisit = activeSiteVisit || visits[0] || null;
+
+    const prof = profile?.name || "";
+    const adminLike = isAdmin || isSuperAdmin || prof === "CRM Admin" || prof === "Manager";
+
+    if (status === "INCOMING" && (prof === "Presales" || prof === "Sales Executive" || adminLike)) {
+      actions.push({ label: "Push to SVC", onClick: () => setPushSvcDialogOpen(true), variant: "default" });
+      actions.push({ label: "Move to Recovery", onClick: () => setRecoveryDialogOpen(true), variant: "destructive" });
     }
 
-    if (canAct(isSVC, ["PROSPECT"])) {
+    if (status === "PROSPECT" && (prof === "SVC" || prof === "Sales Executive" || adminLike)) {
       actions.push({ label: "Schedule Site Visit", onClick: () => setSiteVisitDialogOpen(true), variant: "default" });
     }
 
-    if (canAct(isSVC, ["SITE_VISIT_SCHEDULED"])) {
-      actions.push({ label: "Mark Visit Completed", onClick: () => openStatusDialog("SITE_VISIT_HAPPENED"), variant: "default" });
+    if (status === "SITE_VISIT_SCHEDULED" && activeSiteVisit && (prof === "SVC" || prof === "Sales" || prof === "Sales Executive" || adminLike)) {
+      actions.push({ label: "Edit Site Visit", onClick: () => router.push(`/site-visits/${activeSiteVisit.id}`), variant: "outline" });
+      actions.push({ label: "Revisit", onClick: () => setRevisitDialogOpen(true), variant: "outline" });
+      actions.push({ label: "Cancel Site Visit", onClick: () => setCancelSvDialogOpen(true), variant: "destructive" });
+      actions.push({ label: "Complete Site Visit", onClick: () => setCompleteSvDialogOpen(true), variant: "default" });
     }
 
-    if (canAct(isSales, ["SITE_VISIT_SCHEDULED", "SITE_VISIT_HAPPENED"])) {
-      actions.push({ label: "Mark Booked", onClick: () => openStatusDialog("BOOKED"), variant: "default" });
+    if (status === "SITE_VISIT_HAPPENED") {
+      if (latestSiteVisit) {
+        actions.push({ label: "Revisit", onClick: () => setRevisitDialogOpen(true), variant: "outline" });
+      }
+      if ((lead?.opportunities?.length || 0) > 0) {
+        actions.push({ label: "View Opportunity", onClick: () => router.push(`/opportunities/${lead?.opportunities?.[0]?.id}`), variant: "default" });
+      } else if (hasEffectivePermission("OPPORTUNITY_CREATE")) {
+        actions.push({
+          label: "Convert",
+          onClick: () => {
+            setOppName(`${lead?.company || `${lead?.firstName || ""} ${lead?.lastName || ""}`.trim()} Opportunity`);
+            setOppDescription(lead?.requirements || lead?.notes || "");
+            setOppProjectId(lead?.project?.id || "");
+            setOppUnitId("");
+            setCreateOppDialogOpen(true);
+          },
+          variant: "default",
+        });
+      }
+      if (hasEffectivePermission("QUOTATION_CREATE")) {
+        actions.push({ label: "Create Quotation", onClick: () => setCreateQuoteDialogOpen(true), variant: "default" });
+      }
+      if (hasEffectivePermission("BOOKING_CREATE") && (lead?.opportunities?.length || 0) > 0 && lead?.project?.id) {
+        actions.push({ label: "Create Booking", onClick: () => setCreateBookingDialogOpen(true), variant: "default" });
+      }
     }
 
-    if (canAct(isRecovery, ["LOST"])) {
-      actions.push({ label: "Move to Incoming", onClick: () => openStatusDialog("INCOMING"), variant: "default" });
+    if (status === "BOOKED" && (lead?.opportunities?.length || 0) > 0) {
+      actions.push({ label: "View Opportunity", onClick: () => router.push(`/opportunities/${lead?.opportunities?.[0]?.id}`), variant: "default" });
     }
 
     return actions;
@@ -663,6 +991,21 @@ export default function LeadDetailPage() {
 
   const leadDisplayName = `${lead.firstName ? lead.firstName + " " : ""}${lead.lastName}`;
 
+  const leadProfileName = profile?.name || "";
+  const isPresales = leadProfileName === "Presales";
+  const isSvc = leadProfileName === "SVC";
+  const isSales = leadProfileName === "Sales";
+  const isCrm = leadProfileName === "CRM";
+  const isAdminLike = isAdmin || isSuperAdmin || leadProfileName === "CRM Admin" || leadProfileName === "Manager";
+  const showOpportunities = isSales || isCrm || isSvc || isAdminLike;
+  const showAuditHistory = isAdminLike;
+  const showSiteVisits = isSvc || isSales || isCrm || isAdminLike || leadProfileName === "Sales Executive" || leadProfileName === "Presales";
+
+  const openDetail = (kind: "task" | "followup" | "note" | "activity", data: any) => {
+    setDetailItem({ kind, data });
+    setDetailDialogOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Lead Status Progression */}
@@ -687,11 +1030,11 @@ export default function LeadDetailPage() {
                       {isCurrent ? (
                         <CheckCircle2 className="h-4 w-4" />
                       ) : (
-                        <span className="text-[10px]">{idx + 1}</span>
+                        <span className="text-[11px]">{idx + 1}</span>
                       )}
                     </div>
                     <span
-                      className={`text-[10px] mt-1 text-center ${
+                      className={`text-[11px] mt-1 text-center ${
                         isCurrent ? "font-semibold text-blue-600" : "text-muted-foreground"
                       }`}
                     >
@@ -716,7 +1059,7 @@ export default function LeadDetailPage() {
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{leadDisplayName}</h1>
+            <h1 className="text-xl font-bold">{leadDisplayName}</h1>
             <Badge variant="outline" className="font-mono text-sm">
               {lead.leadNumber}
             </Badge>
@@ -733,6 +1076,16 @@ export default function LeadDetailPage() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          {canChangeOwner && !isEditing && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={openOwnerDialog}
+              disabled={isActionLoading}
+            >
+              <ArrowRight className="h-4 w-4 mr-1" />Change Owner
+            </Button>
+          )}
           {canEditLead && !isEditing && (
             <Button
               variant="outline"
@@ -823,15 +1176,26 @@ export default function LeadDetailPage() {
           <TabsTrigger value="followups" className="gap-2">
             <Clock className="h-4 w-4" />Follow-ups
           </TabsTrigger>
-          <TabsTrigger value="site-visits" className="gap-2">
-            <Map className="h-4 w-4" />Site Visits
-          </TabsTrigger>
-          <TabsTrigger value="opportunities" className="gap-2">
-            <TrendingUp className="h-4 w-4" />Opportunities
-          </TabsTrigger>
-          <TabsTrigger value="audit-history" className="gap-2">
-            <FileText className="h-4 w-4" />Audit History
-          </TabsTrigger>
+          {showSiteVisits && (
+            <TabsTrigger value="site-visits" className="gap-2">
+              <Map className="h-4 w-4" />Site Visits
+              {lead.siteVisits && lead.siteVisits.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-5 min-w-5 justify-center px-1.5 text-[11px]">
+                  {lead.siteVisits.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          )}
+          {showOpportunities && (
+            <TabsTrigger value="opportunities" className="gap-2">
+              <TrendingUp className="h-4 w-4" />Opportunities
+            </TabsTrigger>
+          )}
+          {showAuditHistory && (
+            <TabsTrigger value="audit-history" className="gap-2">
+              <FileText className="h-4 w-4" />Audit History
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Overview Tab */}
@@ -983,15 +1347,20 @@ export default function LeadDetailPage() {
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
               {lead.activities && lead.activities.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 text-left">
                   {lead.activities.map((activity: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-3 text-left p-3 rounded-md bg-muted/50">
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => openDetail(activity.type === "NOTE" ? "note" : "activity", activity)}
+                      className="w-full flex items-center gap-3 text-left p-3 rounded-md bg-muted/50 hover:bg-muted transition-colors"
+                    >
                       <History className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div>
-                        <p className="text-sm">{activity.description || activity.type}</p>
+                      <div className="min-w-0">
+                        <p className="text-sm">{activity.subject || activity.description || activity.type}</p>
                         <p className="text-xs text-muted-foreground">{formatDateTime(activity.createdAt)}</p>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -1009,15 +1378,20 @@ export default function LeadDetailPage() {
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
               {lead.tasks && lead.tasks.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 text-left">
                   {lead.tasks.map((task: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-3 text-left p-3 rounded-md bg-muted/50">
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => openDetail("task", task)}
+                      className="w-full flex items-center gap-3 text-left p-3 rounded-md bg-muted/50 hover:bg-muted transition-colors"
+                    >
                       <CheckSquare className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm">{task.title || task.name}</p>
                         <p className="text-xs text-muted-foreground">{task.status} {task.dueDate ? `- Due ${formatDate(task.dueDate)}` : ""}</p>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -1035,15 +1409,20 @@ export default function LeadDetailPage() {
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
               {lead.followUps && lead.followUps.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 text-left">
                   {lead.followUps.map((fu: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-3 text-left p-3 rounded-md bg-muted/50">
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => openDetail("followup", fu)}
+                      className="w-full flex items-center gap-3 text-left p-3 rounded-md bg-muted/50 hover:bg-muted transition-colors"
+                    >
                       <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm">{fu.title || fu.description || fu.type}</p>
                         <p className="text-xs text-muted-foreground">{fu.dueDate ? formatDateTime(fu.dueDate) : fu.status}</p>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -1057,20 +1436,32 @@ export default function LeadDetailPage() {
         </TabsContent>
 
         {/* Site Visits Tab */}
+        {showSiteVisits && (
         <TabsContent value="site-visits">
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
               {lead.siteVisits && lead.siteVisits.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 text-left">
                   {lead.siteVisits.map((sv: any, idx: number) => (
-                    <div key={idx} className="flex items-center gap-3 text-left p-3 rounded-md bg-muted/50">
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => router.push(`/site-visits/${sv.id}`)}
+                      className="w-full flex items-center gap-3 text-left p-3 rounded-md bg-muted/50 hover:bg-muted transition-colors"
+                    >
                       <Map className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div>
-                        <p className="text-sm">{sv.status || "Scheduled"} {sv.project?.name ? `- ${sv.project.name}` : ""}</p>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {sv.siteVisitNumber && (
+                            <span className="text-sm font-medium font-mono">{sv.siteVisitNumber}</span>
+                          )}
+                          <Badge variant="outline">{sv.status || "SCHEDULED"}</Badge>
+                          {sv.project?.name && <span className="text-sm text-muted-foreground">- {sv.project.name}</span>}
+                        </div>
                         <p className="text-xs text-muted-foreground">{sv.scheduledAt ? formatDateTime(sv.scheduledAt) : sv.createdAt ? formatDateTime(sv.createdAt) : ""}</p>
                         {sv.assignee && <p className="text-xs text-muted-foreground">Assigned: {sv.assignee.firstName} {sv.assignee.lastName}</p>}
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -1082,19 +1473,24 @@ export default function LeadDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
         {/* Opportunities Tab */}
+        {showOpportunities && (
         <TabsContent value="opportunities">
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
               {lead.opportunities && lead.opportunities.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-3 text-left">
                   {lead.opportunities.map((opp: any, idx: number) => (
                     <div key={idx} className="flex items-center gap-3 text-left p-3 rounded-md bg-muted/50">
                       <TrendingUp className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div>
-                        <p className="text-sm">{opp.name || opp.title || "Opportunity"}</p>
-                        <p className="text-xs text-muted-foreground">{opp.stage || opp.status} {opp.amount ? `- ₹${opp.amount.toLocaleString()}` : ""}</p>
+                        <p className="text-sm">{opp.opportunityNumber ? `${opp.opportunityNumber} · ` : ""}{opp.name || opp.title || "Opportunity"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {opp.stage || opp.status} {opp.amount ? `- ₹${opp.amount.toLocaleString()}` : ""}
+                          {opp.owner ? ` · ${opp.owner.firstName} ${opp.owner.lastName}` : ""}
+                        </p>
                       </div>
                     </div>
                   ))}
@@ -1108,8 +1504,10 @@ export default function LeadDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
 
         {/* Audit History Tab */}
+        {showAuditHistory && (
         <TabsContent value="audit-history">
           <Card>
             <CardHeader>
@@ -1199,30 +1597,59 @@ export default function LeadDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+        )}
       </Tabs>
 
-      {/* Status Change Dialog */}
-      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+      <Dialog open={ownerDialogOpen} onOpenChange={setOwnerDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Change Status to {STATUS_LABELS[pendingStatus] || pendingStatus}</DialogTitle>
-            <DialogDescription>A note/reason is required for this status change.</DialogDescription>
+            <DialogTitle>Change Lead Owner</DialogTitle>
+            <DialogDescription>
+              Assign this lead to an eligible active user in the current tenant.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <span className="text-muted-foreground">Current Owner: </span>
+              <span className="font-medium">
+                {lead.owner ? `${lead.owner.firstName} ${lead.owner.lastName}` : "Unassigned"}
+              </span>
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="status-note">Note / Reason *</Label>
+              <Label>New Owner *</Label>
+              <Select value={newOwnerId} onValueChange={setNewOwnerId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select User" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ownerCandidates.map((candidate) => (
+                    <SelectItem key={candidate.id} value={candidate.id}>
+                      {candidate.firstName} {candidate.lastName} ({candidate.profile?.name || "—"})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {ownerCandidates.length === 0 && (
+                <p className="text-sm text-muted-foreground">No eligible users are available.</p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="owner-change-reason">Reason *</Label>
               <Textarea
-                id="status-note"
-                placeholder="Enter the reason for this status change..."
-                value={statusNote}
-                onChange={(e) => setStatusNote(e.target.value)}
+                id="owner-change-reason"
+                value={ownerChangeReason}
+                onChange={(event) => setOwnerChangeReason(event.target.value)}
+                placeholder="Enter reason"
+                rows={3}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStatusDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
-            <Button onClick={handleStatusUpdateWithNote} disabled={isActionLoading || !statusNote.trim()}>
-              {isActionLoading ? "Updating..." : "Confirm"}
+            <Button variant="outline" onClick={() => setOwnerDialogOpen(false)} disabled={isActionLoading}>
+              Cancel
+            </Button>
+            <Button onClick={changeOwner} disabled={isActionLoading || ownerCandidates.length === 0}>
+              {isActionLoading ? "Changing..." : "Change Owner"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1236,6 +1663,19 @@ export default function LeadDetailPage() {
             <DialogDescription>This lead will be assigned to a Site Visit Coordinator via Round Robin.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <p className="mb-1 font-medium">Lead Information</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                <p>Lead Number: <span className="font-medium text-foreground">{lead.leadNumber}</span></p>
+                <p>Name: <span className="font-medium text-foreground">{`${lead.firstName || ""} ${lead.lastName || ""}`.trim()}</span></p>
+                <p>Phone: <span className="font-medium text-foreground">{lead.phone || lead.mobile || "—"}</span></p>
+                <p>Company: <span className="font-medium text-foreground">{lead.company || "—"}</span></p>
+                <p>Email: <span className="font-medium text-foreground">{lead.email || "—"}</span></p>
+                <p>Owner: <span className="font-medium text-foreground">{lead.owner ? `${lead.owner.firstName} ${lead.owner.lastName}` : "Unassigned"}</span></p>
+                <p>Project: <span className="font-medium text-foreground">{lead.project?.name || "—"}</span></p>
+                <p>Status: <span className="font-medium text-foreground">{lead.status}</span></p>
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="push-svc-reason">Reason / Note *</Label>
               <Textarea
@@ -1482,6 +1922,426 @@ export default function LeadDetailPage() {
             <Button variant="outline" onClick={() => setNoteDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
             <Button onClick={handleCreateNote} disabled={isActionLoading || !noteContent.trim()}>
               {isActionLoading ? "Adding..." : "Add Note"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Detail Dialog for Task / Follow-up / Note / Activity */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {detailItem?.kind === "task" && "Task Details"}
+              {detailItem?.kind === "followup" && "Follow-up Details"}
+              {detailItem?.kind === "note" && "Note Details"}
+              {detailItem?.kind === "activity" && "Activity Details"}
+            </DialogTitle>
+            <DialogDescription>
+              {detailItem?.kind === "task" && "Full task record"}
+              {detailItem?.kind === "followup" && "Full follow-up record"}
+              {detailItem?.kind === "note" && "Note content and metadata"}
+              {detailItem?.kind === "activity" && "Activity content and metadata"}
+            </DialogDescription>
+          </DialogHeader>
+          {detailItem && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {detailItem.kind === "task" || detailItem.kind === "followup" ? "Title" : "Subject"}
+                </p>
+                <p className="text-sm font-medium">
+                  {detailItem.data.title || detailItem.data.subject || detailItem.data.description || "—"}
+                </p>
+              </div>
+              {detailItem.data.description && detailItem.data.title && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Description</p>
+                  <p className="text-sm whitespace-pre-wrap">{detailItem.data.description}</p>
+                </div>
+              )}
+              {detailItem.data.status && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Status</span>
+                  <Badge variant="outline">{detailItem.data.status}</Badge>
+                </div>
+              )}
+              {detailItem.data.priority && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Priority</span>
+                  <Badge variant="outline">{detailItem.data.priority}</Badge>
+                </div>
+              )}
+              {detailItem.data.dueDate && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Due Date</span>
+                  <span className="text-sm">{formatDateTime(detailItem.data.dueDate)}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Created</span>
+                <span className="text-sm">{formatDateTime(detailItem.data.createdAt)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Updated</span>
+                <span className="text-sm">{formatDateTime(detailItem.data.updatedAt || detailItem.data.createdAt)}</span>
+              </div>
+              {detailItem.data.owner && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Owner</span>
+                  <span className="text-sm">{detailItem.data.owner.firstName} {detailItem.data.owner.lastName}</span>
+                </div>
+              )}
+              {detailItem.data.user && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-muted-foreground">Created By</span>
+                  <span className="text-sm">{detailItem.data.user.firstName} {detailItem.data.user.lastName}</span>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Revisit Dialog */}
+      <Dialog open={revisitDialogOpen} onOpenChange={setRevisitDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Revisit Site Visit</DialogTitle>
+            <DialogDescription>A reason, date, time, and project are required.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="revisit-reason">Reason *</Label>
+              <Textarea
+                id="revisit-reason"
+                placeholder="Why is a revisit needed?"
+                value={revisitReason}
+                onChange={(e) => setRevisitReason(e.target.value)}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="revisit-date">Visit Date *</Label>
+                <Input
+                  id="revisit-date"
+                  type="date"
+                  value={revisitDate}
+                  onChange={(e) => setRevisitDate(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="revisit-time">Visit Time *</Label>
+                <Input
+                  id="revisit-time"
+                  type="time"
+                  value={revisitTime}
+                  onChange={(e) => setRevisitTime(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="revisit-project">Project *</Label>
+              <Select value={revisitProjectId} onValueChange={setRevisitProjectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="revisit-note">Notes</Label>
+              <Textarea
+                id="revisit-note"
+                placeholder="Optional notes..."
+                value={revisitNote}
+                onChange={(e) => setRevisitNote(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevisitDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
+            <Button onClick={handleRevisit} disabled={isActionLoading}>
+              {isActionLoading ? "Creating..." : "Create Revisit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel Site Visit Dialog */}
+      <Dialog open={cancelSvDialogOpen} onOpenChange={setCancelSvDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cancel Site Visit</DialogTitle>
+            <DialogDescription>A reason is required. Lead returns to Prospect.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="cancel-reason">Reason *</Label>
+              <Textarea
+                id="cancel-reason"
+                placeholder="Why is this site visit being cancelled?"
+                value={cancelSvReason}
+                onChange={(e) => setCancelSvReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelSvDialogOpen(false)} disabled={isActionLoading}>Back</Button>
+            <Button variant="destructive" onClick={handleCancelSiteVisit} disabled={isActionLoading}>
+              {isActionLoading ? "Cancelling..." : "Cancel Site Visit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Complete Site Visit Dialog */}
+      <Dialog open={completeSvDialogOpen} onOpenChange={setCompleteSvDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete Site Visit</DialogTitle>
+            <DialogDescription>Marks the site visit as happened. Lead moves to Site Visit Happened.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="complete-time">Completion Time *</Label>
+              <Input id="complete-time" type="datetime-local" value={completeSvTime} onChange={(e) => setCompleteSvTime(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="complete-feedback">Customer Feedback *</Label>
+              <Textarea
+                id="complete-feedback"
+                placeholder="Client feedback..."
+                value={completeSvFeedback}
+                onChange={(e) => setCompleteSvFeedback(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="complete-notes">Notes *</Label>
+              <Textarea id="complete-notes" value={completeSvNotes} onChange={(e) => setCompleteSvNotes(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCompleteSvDialogOpen(false)} disabled={isActionLoading}>Back</Button>
+            <Button onClick={handleCompleteSiteVisit} disabled={isActionLoading || !completeSvTime || !completeSvFeedback.trim() || !completeSvNotes.trim()}>
+              {isActionLoading ? "Completing..." : "Complete Site Visit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Opportunity Dialog */}
+      <Dialog open={createOppDialogOpen} onOpenChange={setCreateOppDialogOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Convert Lead to Opportunity</DialogTitle>
+            <DialogDescription>
+              {lead?.leadNumber} · {lead?.firstName || ""} {lead?.lastName || ""} · Completed Site Visit: {
+                lead?.siteVisits?.find((visit: any) => visit.status === "COMPLETED")?.siteVisitNumber || "—"
+              }
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid gap-3 rounded-md border p-3 text-sm sm:grid-cols-2">
+              <div><span className="font-medium">Phone:</span> {lead?.phone || lead?.mobile || "—"}</div>
+              <div><span className="font-medium">Email:</span> {lead?.email || "—"}</div>
+              <div><span className="font-medium">Company:</span> {lead?.company || "—"}</div>
+              <div><span className="font-medium">Lead Source:</span> {lead?.source || "—"}</div>
+              <div><span className="font-medium">Budget:</span> {lead?.budget ?? "—"}</div>
+              <div><span className="font-medium">Requirements:</span> {lead?.requirements || "—"}</div>
+            </div>
+            {(() => {
+              const completedVisit = lead?.siteVisits?.find((visit: any) => visit.status === "COMPLETED");
+              return (
+                <div className="space-y-2 rounded-md border p-3 text-sm">
+                  <div className="font-medium">Completed Site Visit</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div>Visit Number: {completedVisit?.siteVisitNumber || "—"}</div>
+                    <div>Completed At: {completedVisit?.completedAt ? formatDateTime(completedVisit.completedAt) : "—"}</div>
+                    <div>Project: {completedVisit?.project?.name || lead?.project?.name || "—"}</div>
+                    <div>Assigned Sales User: {completedVisit?.assignee ? `${completedVisit.assignee.firstName || ""} ${completedVisit.assignee.lastName || ""}`.trim() : "—"}</div>
+                  </div>
+                  <div>Customer Feedback: {completedVisit?.customerFeedback || "—"}</div>
+                  <div>Completion Notes: {completedVisit?.completionNotes || "—"}</div>
+                </div>
+              );
+            })()}
+            <div className="space-y-2">
+              <Label htmlFor="opp-name">Name *</Label>
+              <Input
+                id="opp-name"
+                placeholder="Opportunity name..."
+                value={oppName}
+                onChange={(e) => setOppName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Project *</Label>
+                <Select
+                  value={oppProjectId}
+                  onValueChange={(value) => {
+                    setOppProjectId(value);
+                    setOppUnitId("");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an active project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.filter((project) => project.isActive !== false).map((project) => (
+                      <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Unit</Label>
+                <Select value={oppUnitId} onValueChange={setOppUnitId} disabled={!oppProjectId || oppUnitsLoading}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={oppUnitsLoading ? "Loading units..." : "Select an available unit"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {oppUnits.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id}>
+                        {unit.number}{unit.type ? ` · ${unit.type}` : ""}{unit.area ? ` · ${unit.area} sq.ft` : ""}{unit.price ? ` · ₹${unit.price}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {oppUnitId && (() => {
+              const unit = oppUnits.find((item) => item.id === oppUnitId);
+              return unit ? (
+                <div className="grid gap-2 rounded-md border p-3 text-sm sm:grid-cols-2">
+                  <div><span className="font-medium">Unit Number:</span> {unit.number}</div>
+                  <div><span className="font-medium">Unit Type:</span> {unit.type || "—"}</div>
+                  <div><span className="font-medium">Saleable Area:</span> {unit.area ?? "—"}</div>
+                  <div><span className="font-medium">Price:</span> {unit.price ?? "—"}</div>
+                  <div><span className="font-medium">Status:</span> {unit.status}</div>
+                </div>
+              ) : null;
+            })()}
+            <div className="space-y-2">
+              <Label htmlFor="opp-amount">Amount</Label>
+              <Input
+                id="opp-amount"
+                type="number"
+                value={oppAmount}
+                onChange={(e) => setOppAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="opp-description">Description</Label>
+              <Textarea
+                id="opp-description"
+                placeholder="Description..."
+                value={oppDescription}
+                onChange={(e) => setOppDescription(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOppDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
+            <Button onClick={handleCreateOpportunity} disabled={isActionLoading || !oppProjectId}>
+              {isActionLoading ? "Creating..." : "Create Opportunity"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Quotation Dialog */}
+      <Dialog open={createQuoteDialogOpen} onOpenChange={setCreateQuoteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Quotation</DialogTitle>
+            <DialogDescription>Description and unit price are required.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="quote-description">Description *</Label>
+              <Input
+                id="quote-description"
+                placeholder="Line item description..."
+                value={quoteDescription}
+                onChange={(e) => setQuoteDescription(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quote-unit-price">Unit Price *</Label>
+              <Input
+                id="quote-unit-price"
+                type="number"
+                value={quoteUnitPrice}
+                onChange={(e) => setQuoteUnitPrice(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateQuoteDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
+            <Button onClick={handleCreateQuotation} disabled={isActionLoading}>
+              {isActionLoading ? "Creating..." : "Create Quotation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Booking Dialog */}
+      <Dialog open={createBookingDialogOpen} onOpenChange={setCreateBookingDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Booking</DialogTitle>
+            <DialogDescription>Project, unit, and amount are required.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="booking-project">Project *</Label>
+              <Select value={bookingProjectId} onValueChange={setBookingProjectId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="booking-unit">Unit ID *</Label>
+              <Input
+                id="booking-unit"
+                placeholder="Unit identifier..."
+                value={bookingUnitId}
+                onChange={(e) => setBookingUnitId(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="booking-amount">Total Amount *</Label>
+              <Input
+                id="booking-amount"
+                type="number"
+                value={bookingAmount}
+                onChange={(e) => setBookingAmount(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateBookingDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
+            <Button onClick={handleCreateBooking} disabled={isActionLoading}>
+              {isActionLoading ? "Creating..." : "Create Booking"}
             </Button>
           </DialogFooter>
         </DialogContent>

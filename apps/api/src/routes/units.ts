@@ -11,7 +11,7 @@ import { Prisma } from '@prisma/client';
 const router = Router();
 
 const unitSchema = z.object({
-  projectId: z.string().uuid(),
+  projectId: z.string().min(1),
   number: z.string().min(1).max(50),
   type: z.string().min(1).max(50),
   floor: z.number().int().min(0).optional(),

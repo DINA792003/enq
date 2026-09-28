@@ -60,11 +60,11 @@ const groups = [
 
 export default function SetupPage() {
   const router = useRouter();
-  const { isLoading, isAuthenticated, isAdmin } = useAuth();
+  const { isLoading, isAuthenticated, isAdmin, isSuperAdmin } = useAuth();
 
   React.useEffect(() => {
     if (!isLoading && (!isAuthenticated || !isAdmin)) {
-      router.replace(isAuthenticated ? "/dashboard" : "/login?redirect=/setup");
+      router.replace(isAuthenticated ? "/home" : "/login?redirect=/setup");
     }
   }, [isAuthenticated, isAdmin, isLoading, router]);
 
@@ -75,7 +75,7 @@ export default function SetupPage() {
       <div className="flex items-start justify-between gap-4 border-b pb-6">
         <div>
           <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Administration</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">Setup</h1>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight">Setup</h1>
           <p className="mt-2 max-w-2xl text-muted-foreground">
             Configure your CRM, manage access, and keep your organization secure.
           </p>
@@ -84,12 +84,17 @@ export default function SetupPage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {groups.map((group) => (
+        {groups.map((group) => {
+          const visibleItems = group.items.filter(
+            (item) => item.href !== "/admin/object-manager" || isSuperAdmin,
+          );
+          if (visibleItems.length === 0) return null;
+          return (
           <section key={group.title} className="rounded-lg border bg-card p-5">
             <h2 className="font-semibold">{group.title}</h2>
             <p className="mt-1 text-sm text-muted-foreground">{group.description}</p>
             <div className="mt-5 divide-y">
-              {group.items.map((item) => {
+              {visibleItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <Link
@@ -105,7 +110,8 @@ export default function SetupPage() {
               })}
             </div>
           </section>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

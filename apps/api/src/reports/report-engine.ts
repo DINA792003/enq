@@ -1,4 +1,5 @@
 import { prisma } from "@dct-crm/db";
+import { crmDateToUtcStart, getCRMDayBounds } from "@dct-crm/shared";
 import { REPORT_OBJECTS, ReportField } from "./report-metadata";
 
 export type AggregateFunction =
@@ -46,7 +47,8 @@ function parseDateValue(value: unknown): Date | null {
     return null;
   }
 
-  const date = new Date(String(value));
+  const raw = String(value);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? crmDateToUtcStart(raw) : new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -332,96 +334,91 @@ function dateRange(
   operator: string,
   now = new Date(),
 ): { gte: Date; lt: Date } {
-  const start = new Date(now);
-  start.setHours(0, 0, 0, 0);
+  const start = getCRMDayBounds(now).start;
 
   const end = new Date(start);
 
   switch (operator) {
     case "today":
-      end.setDate(end.getDate() + 1);
+      end.setUTCDate(end.getUTCDate() + 1);
       break;
 
     case "yesterday":
-      start.setDate(start.getDate() - 1);
+      start.setUTCDate(start.getUTCDate() - 1);
       end.setTime(start.getTime());
-      end.setDate(end.getDate() + 1);
+      end.setUTCDate(end.getUTCDate() + 1);
       break;
 
     case "tomorrow":
-      start.setDate(start.getDate() + 1);
+      start.setUTCDate(start.getUTCDate() + 1);
       end.setTime(start.getTime());
-      end.setDate(end.getDate() + 1);
+      end.setUTCDate(end.getUTCDate() + 1);
       break;
 
     case "thisWeek": {
-      const day = start.getDay();
-      start.setDate(start.getDate() - day);
+      const day = start.getUTCDay();
+      start.setUTCDate(start.getUTCDate() - day);
       end.setTime(start.getTime());
-      end.setDate(end.getDate() + 7);
+      end.setUTCDate(end.getUTCDate() + 7);
       break;
     }
 
     case "lastWeek": {
-      const day = start.getDay();
-      start.setDate(start.getDate() - day - 7);
+      const day = start.getUTCDay();
+      start.setUTCDate(start.getUTCDate() - day - 7);
       end.setTime(start.getTime());
-      end.setDate(end.getDate() + 7);
+      end.setUTCDate(end.getUTCDate() + 7);
       break;
     }
 
     case "nextWeek": {
-      const day = start.getDay();
-      start.setDate(start.getDate() - day + 7);
+      const day = start.getUTCDay();
+      start.setUTCDate(start.getUTCDate() - day + 7);
       end.setTime(start.getTime());
-      end.setDate(end.getDate() + 7);
+      end.setUTCDate(end.getUTCDate() + 7);
       break;
     }
 
     case "thisMonth":
-      end.setMonth(end.getMonth() + 1, 1);
+      end.setUTCMonth(end.getUTCMonth() + 1, 1);
       break;
 
     case "lastMonth":
-      start.setMonth(start.getMonth() - 1, 1);
-      end.setTime(new Date(
-        start.getFullYear(),
-        start.getMonth() + 1,
-        1,
-      ).getTime());
+      start.setUTCMonth(start.getUTCMonth() - 1, 1);
+      end.setTime(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1) - 330 * 60 * 1000);
       break;
 
     case "nextMonth":
-      start.setMonth(start.getMonth() + 1, 1);
-      end.setTime(new Date(start.getFullYear(), start.getMonth() + 1, 1).getTime());
+      start.setUTCMonth(start.getUTCMonth() + 1, 1);
+      end.setTime(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1) - 330 * 60 * 1000);
       break;
 
     case "thisQuarter": {
-      const quarterStart = Math.floor(start.getMonth() / 3) * 3;
-      start.setMonth(quarterStart, 1);
-      end.setTime(new Date(start.getFullYear(), quarterStart + 3, 1).getTime());
+      const quarterStart = Math.floor(start.getUTCMonth() / 3) * 3;
+      start.setUTCMonth(quarterStart, 1);
+      end.setTime(Date.UTC(start.getUTCFullYear(), quarterStart + 3, 1) - 330 * 60 * 1000);
       break;
     }
 
     case "lastQuarter": {
-      const quarterStart = Math.floor(start.getMonth() / 3) * 3 - 3;
-      start.setMonth(quarterStart, 1);
-      end.setTime(new Date(start.getFullYear(), quarterStart + 3, 1).getTime());
+      const quarterStart = Math.floor(start.getUTCMonth() / 3) * 3 - 3;
+      start.setUTCMonth(quarterStart, 1);
+      end.setTime(Date.UTC(start.getUTCFullYear(), quarterStart + 3, 1) - 330 * 60 * 1000);
       break;
     }
 
     case "thisYear":
-      end.setFullYear(end.getFullYear() + 1, 0, 1);
+      end.setUTCFullYear(end.getUTCFullYear() + 1, 0, 1);
       break;
 
     case "lastYear":
-      start.setFullYear(start.getFullYear() - 1, 0, 1);
-      end.setTime(new Date(start.getFullYear() + 1, 0, 1).getTime());
+      start.setUTCFullYear(start.getUTCFullYear() - 1, 0, 1);
+      end.setTime(Date.UTC(start.getUTCFullYear() + 1, 0, 1) - 330 * 60 * 1000);
       break;
 
     case "last90Days":
-      start.setDate(start.getDate() - 89);
-      end.setDate(end.getDate() + 1);
+      start.setUTCDate(start.getUTCDate() - 89);
+      end.setUTCDate(end.getUTCDate() + 1);
       break;
   }
 
@@ -1029,17 +1026,23 @@ function groupValue(
       const date = new Date(String(raw));
       if (!Number.isNaN(date.getTime())) {
         const bucket = groupOptions[fieldName]?.dateBucket || "day";
-        const year = date.getFullYear();
-        const month = date.getMonth();
+        const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kolkata",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).formatToParts(date).map((part) => [part.type, part.value]));
+        const year = Number(parts.year);
+        const month = Number(parts.month) - 1;
+        const day = Number(parts.day);
         if (bucket === "year") values[fieldName] = String(year);
         else if (bucket === "quarter") values[fieldName] = `Q${Math.floor(month / 3) + 1} ${year}`;
-        else if (bucket === "month") values[fieldName] = date.toLocaleString("en", { month: "long", year: "numeric" });
+        else if (bucket === "month") values[fieldName] = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "Asia/Kolkata" }).format(date);
         else if (bucket === "week") {
-          const start = new Date(date);
-          start.setHours(0, 0, 0, 0);
-          start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+          const start = new Date(Date.UTC(year, month, day));
+          start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
           values[fieldName] = `Week of ${start.toISOString().slice(0, 10)}`;
-        } else values[fieldName] = date.toISOString().slice(0, 10);
+        } else values[fieldName] = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         continue;
       }
     }

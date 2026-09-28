@@ -171,7 +171,7 @@ export default function QuotationDetailPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">{quotation.quotationNumber}</h1>
+            <h1 className="text-xl font-semibold">{quotation.quotationNumber}</h1>
             <p className="text-muted-foreground">Quotation for {quotation.leadName}</p>
           </div>
         </div>
@@ -235,11 +235,7 @@ export default function QuotationDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Valid Until</p>
                 <p className="text-sm font-medium">
-                  {new Date(quotation.validUntil).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  {formatDate(quotation.validUntil)}
                 </p>
               </div>
             </div>
@@ -254,11 +250,7 @@ export default function QuotationDetailPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Created</p>
                 <p className="text-sm font-medium">
-                  {new Date(quotation.createdAt).toLocaleDateString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  {formatDate(quotation.createdAt)}
                 </p>
               </div>
             </div>

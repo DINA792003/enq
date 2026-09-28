@@ -1,5 +1,4 @@
 import { Response, NextFunction } from 'express';
-import { prisma } from '@dct-crm/db';
 import { AuthRequest } from './auth';
 import { EffectivePermissionService } from '../services/effectivePermissions';
 
@@ -23,40 +22,12 @@ export const authorize = (objectName: string, requiredPermission: keyof Permissi
         return next();
       }
 
-      const userRoles = await prisma.userRole.findMany({
-        where: { userId: req.user.id },
-        include: {
-          role: {
-            include: {
-              permissionSets: {
-                include: {
-                  permissionSet: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      let hasPermission = false;
-
-      for (const userRole of userRoles) {
-        for (const rolePerm of userRole.role.permissionSets) {
-          if (rolePerm.permissionSet.objectName === objectName) {
-            const permissions = rolePerm.permissionSet.permissions as Permission;
-            if (permissions[requiredPermission]) {
-              hasPermission = true;
-              break;
-            }
-          }
-        }
-        if (hasPermission) break;
-      }
-
-      if (!hasPermission) {
-        const moduleName = objectName === 'AuditLog' ? 'AUDIT' : objectName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
-        const actionName = requiredPermission === 'edit' ? 'UPDATE' : requiredPermission.toUpperCase();
-        hasPermission = await EffectivePermissionService.hasPermission(req.user.id, `${moduleName}_${actionName}`);
+      const moduleName = objectName === 'AuditLog' ? 'AUDIT' : objectName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+      const actionName = requiredPermission === 'edit' ? 'UPDATE' : requiredPermission.toUpperCase();
+      const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user, req.user.id);
+      let hasPermission = EffectivePermissionService.hasPermissionIn(perms, `${moduleName}_${actionName}`);
+      if (!hasPermission && moduleName === 'REPORT' && actionName === 'READ') {
+        hasPermission = EffectivePermissionService.hasPermissionIn(perms, 'REPORT_VIEW');
       }
 
       if (!hasPermission) {
@@ -84,32 +55,7 @@ export const checkRecordAccess = async (
 ): Promise<boolean> => {
   if (isSuperAdmin) return true;
 
-  const userRoles = await prisma.userRole.findMany({
-    where: { userId },
-    include: {
-      role: {
-        include: {
-          permissionSets: {
-            include: {
-              permissionSet: true,
-            },
-          },
-        },
-      },
-    },
-  });
-
-  for (const userRole of userRoles) {
-    for (const rolePerm of userRole.role.permissionSets) {
-      if (rolePerm.permissionSet.objectName === objectName) {
-        const permissions = rolePerm.permissionSet.permissions as Permission;
-        
-        if (permissions.modifyAll) return true;
-        if (permissions.viewAll && action === 'read') return true;
-        if (permissions[action]) return true;
-      }
-    }
-  }
-
-  return false;
+  const moduleName = objectName === 'AuditLog' ? 'AUDIT' : objectName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+  const actionName = action === 'edit' ? 'UPDATE' : action.toUpperCase();
+  return EffectivePermissionService.hasPermission(userId, `${moduleName}_${actionName}`);
 };

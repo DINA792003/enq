@@ -3,6 +3,13 @@ import { prisma } from '@dct-crm/db';
 import { activitySchema } from '@dct-crm/shared';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
+import {
+  applyScope,
+  canAccessActivity,
+  canAccessLeadId,
+  getScopeClause,
+} from '../services/recordAccess';
+import { promoteNewLeadOnFirstActivity } from '../services/leadWorkflowExtras';
 
 const router = Router();
 
@@ -13,7 +20,7 @@ router.get('/', authorize('Activity', 'read'), async (req: AuthRequest, res: Res
     const { page = 1, limit = 20, type, leadId, siteVisitId, opportunityId, bookingId, userId, startDate, endDate, search, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { tenantId: req.tenantId! };
+    let where: any = { tenantId: req.tenantId! };
     if (type) where.type = type;
     if (leadId) where.leadId = leadId;
     if (siteVisitId) where.siteVisitId = siteVisitId;
@@ -32,6 +39,7 @@ router.get('/', authorize('Activity', 'read'), async (req: AuthRequest, res: Res
         { description: { contains: search as string, mode: 'insensitive' } },
       ];
     }
+    where = applyScope(where, await getScopeClause(req.user!, 'activity'));
 
     const [activities, total] = await Promise.all([
       prisma.activity.findMany({
@@ -83,6 +91,10 @@ router.get('/:id', authorize('Activity', 'read'), async (req: AuthRequest, res: 
       return res.status(404).json({ success: false, error: 'Activity not found' });
     }
 
+    if (!(await canAccessActivity(req.user!, activity))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this activity' });
+    }
+
     res.json({ success: true, data: activity });
   } catch (error) {
     console.error('Get activity error:', error);
@@ -94,39 +106,57 @@ router.post('/', authorize('Activity', 'create'), async (req: AuthRequest, res: 
   try {
     const data = activitySchema.parse(req.body);
 
+    if (data.leadId && !(await canAccessLeadId(req.user!, data.leadId))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked lead' });
+    }
+
     if (data.type === 'NOTE' && (!data.description || !data.description.trim())) {
       return res.status(400).json({ success: false, error: 'Note content is required' });
     }
 
-    const activity = await prisma.activity.create({
-      data: {
-        tenantId: req.tenantId!,
-        userId: req.user!.id,
-        type: data.type,
-        subject: data.subject,
-        description: data.description,
-        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-        leadId: data.leadId || undefined,
-        siteVisitId: data.siteVisitId || undefined,
-        opportunityId: data.opportunityId || undefined,
-        bookingId: data.bookingId || undefined,
-      },
-      include: {
-        user: { select: { id: true, firstName: true, lastName: true } },
-        lead: { select: { id: true, firstName: true, lastName: true } },
-      },
-    });
+    const activity = await prisma.$transaction(async (tx) => {
+      const created = await tx.activity.create({
+        data: {
+          tenantId: req.tenantId!,
+          userId: req.user!.id,
+          type: data.type,
+          subject: data.subject,
+          description: data.description,
+          dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+          leadId: data.leadId || undefined,
+          siteVisitId: data.siteVisitId || undefined,
+          opportunityId: data.opportunityId || undefined,
+          bookingId: data.bookingId || undefined,
+        },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true } },
+          lead: { select: { id: true, firstName: true, lastName: true } },
+        },
+      });
 
-    await prisma.auditLog.create({
-      data: {
-        tenantId: req.tenantId!,
-        userId: req.user!.id,
-        leadId: data.leadId || undefined,
-        action: data.type === 'NOTE' ? 'NOTE_CREATED' : 'CREATE',
-        objectType: 'Activity',
-        objectId: activity.id,
-        newValues: data,
-      },
+      if (data.leadId) {
+        await promoteNewLeadOnFirstActivity(tx, {
+          tenantId: req.tenantId!,
+          leadId: data.leadId,
+          userId: req.user!.id,
+          profileName: req.user!.profileName,
+          activityLabel: data.type === 'NOTE' ? 'Note' : `Activity (${data.type})`,
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: req.tenantId!,
+          userId: req.user!.id,
+          leadId: data.leadId || undefined,
+          action: data.type === 'NOTE' ? 'NOTE_CREATED' : 'CREATE',
+          objectType: 'Activity',
+          objectId: created.id,
+          newValues: data,
+        },
+      });
+
+      return created;
     });
 
     res.status(201).json({ success: true, data: activity });
@@ -147,6 +177,10 @@ router.put('/:id', authorize('Activity', 'edit'), async (req: AuthRequest, res: 
 
     if (!existingActivity) {
       return res.status(404).json({ success: false, error: 'Activity not found' });
+    }
+
+    if (!(await canAccessActivity(req.user!, existingActivity))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this activity' });
     }
 
     const data = activitySchema.partial().parse(req.body);
@@ -196,6 +230,10 @@ router.delete('/:id', authorize('Activity', 'delete'), async (req: AuthRequest, 
       return res.status(404).json({ success: false, error: 'Activity not found' });
     }
 
+    if (!(await canAccessActivity(req.user!, activity))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this activity' });
+    }
+
     await prisma.activity.delete({ where: { id: req.params.id } });
 
     await prisma.auditLog.create({
@@ -225,6 +263,10 @@ router.put('/:id/complete', authorize('Activity', 'edit'), async (req: AuthReque
 
     if (!activity) {
       return res.status(404).json({ success: false, error: 'Activity not found' });
+    }
+
+    if (!(await canAccessActivity(req.user!, activity))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to this activity' });
     }
 
     const updatedActivity = await prisma.activity.update({

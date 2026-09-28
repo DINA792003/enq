@@ -194,6 +194,14 @@ router.post('/send', async (req: AuthRequest, res: Response) => {
         },
       });
       conversationId = conversation.id;
+    } else {
+      const existing = await prisma.aIConversation.findFirst({
+        where: { id: conversationId, tenantId: req.tenantId!, userId: req.user!.id },
+      });
+
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Conversation not found' });
+      }
     }
 
     const userMessage = await prisma.aIMessage.create({

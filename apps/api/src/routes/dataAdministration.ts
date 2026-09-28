@@ -5,6 +5,12 @@ import { authenticate, AuthRequest } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
 import { bulkCreateRecords, listRecords } from '../services/dynamicCrud';
 import { getFieldDefinitions, getObjectDefinition } from '../services/metadata';
+import {
+  applyScope,
+  getLeadRecordScope,
+  getScopeClause,
+  leadScopeClause,
+} from '../services/recordAccess';
 
 const router = Router();
 router.use(authenticate);
@@ -125,8 +131,26 @@ router.get('/export/:objectName', requirePermission('DATA_EXPORT'), async (req: 
     const standardModel = STANDARD_EXPORT_MODELS[req.params.objectName.toLowerCase()];
     if (standardModel) {
       const delegate = (prisma as any)[standardModel];
+      let where: any = { tenantId: req.tenantId! };
+      if (standardModel === 'lead') {
+        where = applyScope(where, leadScopeClause(await getLeadRecordScope(req.user!)));
+      } else if (standardModel === 'siteVisit') {
+        where = applyScope(where, await getScopeClause(req.user!, 'siteVisit'));
+      } else if (standardModel === 'opportunity') {
+        where = applyScope(where, await getScopeClause(req.user!, 'opportunity'));
+      } else if (standardModel === 'booking') {
+        where = applyScope(where, await getScopeClause(req.user!, 'booking'));
+      } else if (standardModel === 'quotation') {
+        where = applyScope(where, await getScopeClause(req.user!, 'quotation'));
+      } else if (standardModel === 'task') {
+        where = applyScope(where, await getScopeClause(req.user!, 'task'));
+      } else if (standardModel === 'followUp') {
+        where = applyScope(where, await getScopeClause(req.user!, 'followUp'));
+      } else if (standardModel === 'activity') {
+        where = applyScope(where, await getScopeClause(req.user!, 'activity'));
+      }
       const records = await delegate.findMany({
-        where: { tenantId: req.tenantId! },
+        where,
         skip: (pageNumber - 1) * pageLimit,
         take: pageLimit,
         orderBy: { createdAt: 'desc' },

@@ -8,16 +8,9 @@ const router = Router();
 router.use(authenticate);
 
 function requireAdmin(req: AuthRequest, res: Response): boolean {
-  if (req.user?.isSuperAdmin) return true;
-  if (req.user?.isAdmin) return true;
-  const hasPerm = (req as any).effectivePermissions?.some(
-    (p: any) => p.objectName === 'Setup' && p.permission === 'configure'
-  );
-  if (!hasPerm) {
-    res.status(403).json({ success: false, error: 'Admin access required' });
-    return false;
-  }
-  return true;
+  if (req.user?.isSuperAdmin || req.user?.isAdmin) return true;
+  res.status(403).json({ success: false, error: 'Admin access required' });
+  return false;
 }
 
 async function getValidPoolTypes(tenantId: string): Promise<string[]> {

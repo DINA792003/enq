@@ -45,21 +45,22 @@ router.put('/:profileId/permissions', requirePermission('PROFILE_PERMISSION_MANA
     }
 
     const data = setProfilePermissionsSchema.parse(req.body);
+    const permissionIds = [...new Set(data.permissionIds)];
 
     const validPermissions = await prisma.permission.findMany({
-      where: { id: { in: data.permissionIds }, isActive: true },
+      where: { id: { in: permissionIds }, isActive: true },
     });
 
-    if (validPermissions.length !== data.permissionIds.length) {
+    if (validPermissions.length !== permissionIds.length) {
       return res.status(422).json({ success: false, error: 'One or more invalid permission IDs' });
     }
 
     await prisma.$transaction(async (tx) => {
       await tx.userProfilePermission.deleteMany({ where: { profileId: req.params.profileId } });
 
-      if (data.permissionIds.length > 0) {
+      if (permissionIds.length > 0) {
         await tx.userProfilePermission.createMany({
-          data: data.permissionIds.map((permissionId) => ({ profileId: req.params.profileId, permissionId })),
+          data: permissionIds.map((permissionId) => ({ profileId: req.params.profileId, permissionId })),
         });
       }
     });
@@ -76,7 +77,7 @@ router.put('/:profileId/permissions', requirePermission('PROFILE_PERMISSION_MANA
         action: 'UPDATE',
         objectType: 'ProfilePermissions',
         objectId: req.params.profileId,
-        newValues: { permissionCount: data.permissionIds.length },
+        newValues: { permissionCount: permissionIds.length },
       },
     });
 
@@ -105,13 +106,23 @@ router.post('/:profileId/permissions', requirePermission('PROFILE_PERMISSION_MAN
       return res.status(400).json({ success: false, error: 'permissionIds array is required' });
     }
 
+    const uniquePermissionIds = [...new Set(permissionIds.filter((id: unknown): id is string => typeof id === 'string'))];
+    if (uniquePermissionIds.length !== permissionIds.length) {
+      return res.status(400).json({ success: false, error: 'permissionIds must contain only strings' });
+    }
+
+    const validCount = await prisma.permission.count({ where: { id: { in: uniquePermissionIds }, isActive: true } });
+    if (validCount !== uniquePermissionIds.length) {
+      return res.status(422).json({ success: false, error: 'One or more invalid permission IDs' });
+    }
+
     const existing = await prisma.userProfilePermission.findMany({
-      where: { profileId: req.params.profileId, permissionId: { in: permissionIds } },
+      where: { profileId: req.params.profileId, permissionId: { in: uniquePermissionIds } },
       select: { permissionId: true },
     });
 
     const existingIds = new Set(existing.map((e) => e.permissionId));
-    const newIds = permissionIds.filter((id: string) => !existingIds.has(id));
+    const newIds = uniquePermissionIds.filter((id) => !existingIds.has(id));
 
     if (newIds.length === 0) {
       return res.status(409).json({ success: false, error: 'All permissions already assigned' });
@@ -130,6 +141,9 @@ router.post('/:profileId/permissions', requirePermission('PROFILE_PERMISSION_MAN
 
 router.delete('/:profileId/permissions/:permissionId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
+    const profile = await prisma.profile.findFirst({ where: { id: req.params.profileId, tenantId: req.tenantId! }, select: { id: true } });
+    if (!profile) return res.status(404).json({ success: false, error: 'Profile not found' });
+
     const deleted = await prisma.userProfilePermission.deleteMany({
       where: { profileId: req.params.profileId, permissionId: req.params.permissionId },
     });

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 import { getPageLayout, invalidateCache } from '../services/metadata';
 
 const router = Router();
@@ -48,7 +49,7 @@ router.get('/:objectName/default', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/:objectName', async (req: AuthRequest, res: Response) => {
+router.post('/:objectName', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },
@@ -88,7 +89,7 @@ router.post('/:objectName', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.put('/:objectName/:layoutId', async (req: AuthRequest, res: Response) => {
+router.put('/:objectName/:layoutId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },
@@ -131,7 +132,7 @@ router.put('/:objectName/:layoutId', async (req: AuthRequest, res: Response) => 
   }
 });
 
-router.delete('/:objectName/:layoutId', async (req: AuthRequest, res: Response) => {
+router.delete('/:objectName/:layoutId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },

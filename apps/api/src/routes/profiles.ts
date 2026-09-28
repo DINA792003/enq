@@ -23,7 +23,7 @@ const profileSchema = z.object({
 
 const updateProfileSchema = profileSchema.partial();
 
-router.get('/', async (req: AuthRequest, res: Response) => {
+router.get('/', requirePermission('PROFILE_READ'), async (req: AuthRequest, res: Response) => {
   try {
     const { page = 1, limit = 20, search, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
@@ -66,7 +66,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/:id', async (req: AuthRequest, res: Response) => {
+router.get('/:id', requirePermission('PROFILE_READ'), async (req: AuthRequest, res: Response) => {
   try {
     const profile = await prisma.profile.findFirst({
       where: { id: req.params.id, tenantId: req.tenantId! },
@@ -93,6 +93,10 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 router.post('/', requirePermission('PROFILE_CREATE'), async (req: AuthRequest, res: Response) => {
   try {
     const data = profileSchema.parse(req.body);
+
+    if (data.isAdmin !== undefined && !req.user!.isSuperAdmin) {
+      return res.status(403).json({ success: false, error: 'Only Super Admin can change administrator status' });
+    }
 
     const existingProfile = await prisma.profile.findFirst({
       where: { tenantId: req.tenantId!, name: data.name },
@@ -149,6 +153,10 @@ router.put('/:id', requirePermission('PROFILE_UPDATE'), async (req: AuthRequest,
     }
 
     const data = updateProfileSchema.parse(req.body);
+
+    if (data.isAdmin !== undefined && !req.user!.isSuperAdmin) {
+      return res.status(403).json({ success: false, error: 'Only Super Admin can change administrator status' });
+    }
 
     if (data.name && data.name !== existingProfile.name) {
       const duplicateProfile = await prisma.profile.findFirst({

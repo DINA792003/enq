@@ -11,7 +11,7 @@ export default function SetupLayout({ children }: { children: React.ReactNode })
 
   React.useEffect(() => {
     if (!isLoading && (!isAuthenticated || !isAdmin)) {
-      router.replace(isAuthenticated ? "/dashboard" : `/login?redirect=${encodeURIComponent(pathname)}`);
+      router.replace(isAuthenticated ? "/home" : `/login?redirect=${encodeURIComponent(pathname)}`);
     }
   }, [isAuthenticated, isAdmin, isLoading, pathname, router]);
 

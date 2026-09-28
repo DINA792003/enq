@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 import { getAllFieldDefinitions, invalidateCache } from '../services/metadata';
 
 const router = Router();
@@ -63,7 +64,7 @@ router.get('/:objectName', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.post('/:objectName', async (req: AuthRequest, res: Response) => {
+router.post('/:objectName', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },
@@ -238,7 +239,7 @@ router.get('/:objectName/:fieldId', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.put('/:objectName/:fieldId', async (req: AuthRequest, res: Response) => {
+router.put('/:objectName/:fieldId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },
@@ -345,7 +346,7 @@ router.put('/:objectName/:fieldId', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.patch('/:objectName/:fieldId/toggle', async (req: AuthRequest, res: Response) => {
+router.patch('/:objectName/:fieldId/toggle', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },
@@ -391,7 +392,7 @@ router.patch('/:objectName/:fieldId/toggle', async (req: AuthRequest, res: Respo
   }
 });
 
-router.patch('/:objectName/reorder', async (req: AuthRequest, res: Response) => {
+router.patch('/:objectName/reorder', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },
@@ -433,7 +434,7 @@ router.patch('/:objectName/reorder', async (req: AuthRequest, res: Response) => 
   }
 });
 
-router.delete('/:objectName/:fieldId', async (req: AuthRequest, res: Response) => {
+router.delete('/:objectName/:fieldId', requirePermission('PROFILE_PERMISSION_MANAGE'), async (req: AuthRequest, res: Response) => {
   try {
     const object = await prisma.objectDefinition.findFirst({
       where: { tenantId: req.tenantId!, name: { equals: req.params.objectName, mode: 'insensitive' } },

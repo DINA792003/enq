@@ -133,6 +133,7 @@ export const REPORT_OBJECTS: Record<string, ReportObject> = {
       notes: { label: 'Notes', path: 'notes', type: 'string' },
       createdAt: { label: 'Created Date', path: 'createdAt', type: 'date' },
       updatedAt: { label: 'Updated Date', path: 'updatedAt', type: 'date' },
+      ownerId: { label: 'Owner ID', path: 'ownerId', type: 'string' },
       ownerName: { label: 'Owner', path: 'owner.firstName', type: 'string' },
       projectName: { label: 'Project', path: 'project.name', type: 'string' },
     },

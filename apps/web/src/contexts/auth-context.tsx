@@ -79,7 +79,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAdmin(
           data.user?.isSuperAdmin ||
           profileName === 'Admin' || profileName === 'Manager' || profileName === 'CRM Admin' ||
-          userRoles.includes('Admin') || userRoles.includes('Manager') || userRoles.includes('CRM Admin')
+          profileName === 'System Administrator' || profileName === 'System Administration' ||
+          userRoles.includes('Admin') || userRoles.includes('Manager') || userRoles.includes('CRM Admin') ||
+          userRoles.includes('System Administrator') || userRoles.includes('System Administration')
         );
       }
     } catch (error) {
@@ -98,23 +100,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [roles]
   );
 
-  const hasPermission = React.useCallback(
-    (objectName: string, action: string) => {
-      const objPerms = permissions[objectName];
-      if (!objPerms) return false;
-      if (objPerms.modifyAll) return true;
-      if (action === "read" && objPerms.viewAll) return true;
-      return objPerms[action] === true;
-    },
-    [permissions]
-  );
-
   const hasEffectivePermission = React.useCallback(
     (permissionName: string) => {
       if (hasFullAccess) return true;
       return effectivePermissions.includes(permissionName);
     },
     [effectivePermissions, hasFullAccess]
+  );
+
+  const hasPermission = React.useCallback(
+    (objectName: string, action?: string) => {
+      if (!action) {
+        return hasEffectivePermission(objectName);
+      }
+
+      const normalizedAction = (action || "").toLowerCase();
+      const aliasMap: Record<string, string> = {
+        view: "read",
+        edit: "update",
+        delect: "delete",
+      };
+      const normalizedPermission = aliasMap[normalizedAction] || normalizedAction;
+
+      const objectNameCandidates = new Set<string>([
+        objectName,
+        objectName.replace(/([a-z])([A-Z])/g, "$1_$2"),
+        objectName.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase(),
+      ]);
+
+      const objPerms = Array.from(objectNameCandidates).reduce<Record<string, any> | undefined>((result, candidate) => {
+        if (result) return result;
+        return permissions[candidate] || result;
+      }, undefined);
+
+      if (objPerms) {
+        if (objPerms.modifyAll) return true;
+        if (normalizedPermission === "read" && objPerms.viewAll) return true;
+        return !!objPerms[normalizedPermission];
+      }
+
+      const moduleName = objectName.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase();
+      const permissionName = `${moduleName}_${normalizedPermission.toUpperCase()}`;
+      if (normalizedPermission === "read" && hasEffectivePermission(`${moduleName}_VIEW_ALL`)) return true;
+      if (normalizedPermission === "delete" && hasEffectivePermission(`${moduleName}_MODIFY_ALL`)) return true;
+      if (normalizedPermission === "update" && hasEffectivePermission(`${moduleName}_MODIFY_ALL`)) return true;
+      return hasEffectivePermission(permissionName);
+    },
+    [hasEffectivePermission, permissions]
   );
 
   const hasAnyEffectivePermission = React.useCallback(
@@ -178,7 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             await authApi.stopImpersonation();
           } finally {
-            window.location.href = "/dashboard";
+            window.location.href = "/home";
           }
         },
       }}
