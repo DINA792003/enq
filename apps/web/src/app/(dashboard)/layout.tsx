@@ -45,6 +45,10 @@ function DashboardAccessGuard({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/reports") ? "REPORT_VIEW" :
     null;
 
+  const isCustomizeHomeRoute =
+    pathname === "/admin/customize-home" ||
+    pathname.startsWith("/admin/customize-home/");
+
   React.useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.replace("/login");
@@ -52,15 +56,18 @@ function DashboardAccessGuard({ children }: { children: React.ReactNode }) {
       router.replace("/home");
     } else if (!isLoading && pathname.startsWith("/setup") && !isAdmin && !isSuperAdmin) {
       router.replace("/home");
-    } else if (!isLoading && pathname.startsWith("/admin") && !isSuperAdmin) {
+    } else if (!isLoading && isCustomizeHomeRoute && !isAdmin && !isSuperAdmin) {
+      router.replace("/home");
+    } else if (!isLoading && pathname.startsWith("/admin") && !isCustomizeHomeRoute && !isSuperAdmin) {
       router.replace("/home");
     }
-  }, [hasEffectivePermission, hasFullAccess, isAdmin, isLoading, isAuthenticated, isSuperAdmin, pathname, requiredPermission, router]);
+  }, [hasEffectivePermission, hasFullAccess, isAdmin, isLoading, isAuthenticated, isSuperAdmin, isCustomizeHomeRoute, pathname, requiredPermission, router]);
 
   if (isLoading || !isAuthenticated) return null;
   if (requiredPermission && !(hasFullAccess || hasEffectivePermission(requiredPermission))) return null;
   if (pathname.startsWith("/setup") && !isAdmin && !isSuperAdmin) return null;
-  if (pathname.startsWith("/admin") && !isSuperAdmin) return null;
+  if (isCustomizeHomeRoute && !isAdmin && !isSuperAdmin) return null;
+  if (pathname.startsWith("/admin") && !isCustomizeHomeRoute && !isSuperAdmin) return null;
   return <>{children}</>;
 }
 

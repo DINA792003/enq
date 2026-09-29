@@ -226,7 +226,7 @@ export function Header({ onMenuClick }: HeaderProps) {
                     {homepage.name}
                   </DropdownMenuItem>
                 ))}
-                {isSuperAdmin && (
+                {isAdmin && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuSub>

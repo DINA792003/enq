@@ -1,5 +1,6 @@
-import { redirect } from "next/navigation";
+import * as React from "react";
+import CustomizeProfileHomePage from "./[profileName]/page";
 
-export default function DashboardRedirectPage() {
-  redirect("/home");
+export default function CustomizeHomePage() {
+  return <CustomizeProfileHomePage />;
 }

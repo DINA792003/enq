@@ -31,7 +31,7 @@ const createConfigSchema = z.object({
 router.get('/configs', async (req: AuthRequest, res: Response) => {
   try {
     const configs = await prisma.roundRobinConfig.findMany({
-      where: { tenantId: req.tenantId! },
+      where: { tenantId: req.tenantId!, isActive: true },
       orderBy: { createdAt: 'asc' },
     });
 
