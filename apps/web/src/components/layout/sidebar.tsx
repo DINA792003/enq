@@ -22,6 +22,7 @@ import {
   BarChart3,
   Settings,
   ChevronRight,
+  Clock3,
   X,
 } from "lucide-react";
 
@@ -43,7 +44,6 @@ export function getNavigationByProfile(
   isSuperAdmin: boolean,
   isAdmin: boolean
 ): NavItem[] {
-  void profileName;
   void roles;
 
   const nav: NavItem[] = [{ title: "Home", href: "/home", icon: LayoutDashboard }];
@@ -70,14 +70,28 @@ export function getNavigationByProfile(
   if (hasEffectivePermission("PAYMENT_READ")) {
     nav.push({ title: "Payments", href: "/payments", icon: CreditCard });
   }
-  if (hasEffectivePermission("PROJECT_READ")) {
+  if (profileName?.toLowerCase() !== "sales" && hasEffectivePermission("PROJECT_READ")) {
     nav.push({ title: "Projects", href: "/projects", icon: FolderKanban });
   }
   if (hasEffectivePermission("TASK_READ")) {
     nav.push({ title: "Tasks", href: "/tasks", icon: CheckSquare });
   }
-  if (hasEffectivePermission("REPORT_VIEW")) {
-    nav.push({ title: "Reports", href: "/reports", icon: BarChart3 });
+  // Dashboards nav: admin-only per sidebar spec ("Presales/SVC must see ONLY
+  // Home, Leads, Site Visits"). DASHBOARD_READ alone is NOT sufficient — every
+  // profile holds it because the home page API (homepages.ts) requires it.
+  if ((isSuperAdmin || isAdmin) && hasEffectivePermission("DASHBOARD_READ")) {
+    nav.push({ title: "Dashboards", href: "/dashboards", icon: LayoutDashboard });
+  }
+  if (isAdmin && !isSuperAdmin) {
+    nav.push({ title: "Pre Sales", href: "/profiles/pre-sales", icon: Users });
+    nav.push({ title: "Sales", href: "/profiles/sales", icon: TrendingUp });
+    nav.push({ title: "SVC", href: "/profiles/svc", icon: Users });
+  }
+  // Reports is always offered in the nav; actual report access is enforced
+  // server-side by authorize('Report', 'read') on every reports endpoint.
+  nav.push({ title: "Reports", href: "/reports", icon: BarChart3 });
+  if (!isSuperAdmin && !isAdmin && hasEffectivePermission("FOLLOW_UP_READ")) {
+    nav.push({ title: "Followups", href: "/follow-ups", icon: Clock3 });
   }
 
   if (isSuperAdmin || isAdmin) {

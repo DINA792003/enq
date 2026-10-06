@@ -85,8 +85,10 @@ export function leadScopeClause(scope: RecordScope): Record<string, unknown> | n
   if (scope.type === 'ALL') return null;
   return {
     OR: [
+      // Record access = current lead OWNER. A creator does NOT retain access
+      // after a handoff or admin owner change reassigns the lead
+      // (owner change must remove it from the previous owner's list server-side).
       { ownerId: scope.userId },
-      { creatorId: scope.userId },
       activeSiteVisitShare(scope.userId),
     ],
   };
@@ -96,12 +98,12 @@ export async function canAccessLead(
   user: AuthUserLike,
   lead: { id: string; tenantId: string; ownerId: string | null; creatorId?: string | null },
 ): Promise<boolean> {
-  if (lead.tenantId !== user.tenantId) return false;
+  if (!user.isSuperAdmin && lead.tenantId !== user.tenantId) return false;
   const scope = await getLeadRecordScope(user);
   if (scope.type === 'ALL') return true;
   if (lead.ownerId && lead.ownerId === scope.userId) return true;
-  if (lead.creatorId && lead.creatorId === scope.userId) return true;
 
+  // Creator no longer retains access once ownership has moved to another user.
   const shared = await prisma.siteVisit.findFirst({
     where: {
       leadId: lead.id,
@@ -115,7 +117,7 @@ export async function canAccessLead(
 
 export async function canAccessLeadId(user: AuthUserLike, leadId: string): Promise<boolean> {
   const lead = await prisma.lead.findFirst({
-    where: { id: leadId, tenantId: user.tenantId },
+    where: { id: leadId, ...(user.isSuperAdmin ? {} : { tenantId: user.tenantId }) },
     select: { id: true, tenantId: true, ownerId: true, creatorId: true },
   });
   if (!lead) return false;
@@ -237,6 +239,7 @@ export type RecordKind =
   | 'opportunity'
   | 'booking'
   | 'quotation'
+  | 'payment'
   | 'task'
   | 'followUp'
   | 'activity';
@@ -293,6 +296,18 @@ const builders: Record<
       ],
     };
   },
+  payment: (scope) => {
+    if (scope.type === 'ALL') return null;
+    return {
+      booking: {
+        OR: [
+          { ownerId: scope.userId },
+          { creatorId: scope.userId },
+          { lead: leadScopeClause(scope) },
+        ],
+      },
+    };
+  },
   task: (scope) => {
     if (scope.type === 'ALL') return null;
     return {
@@ -317,12 +332,17 @@ export async function getScopeClause(
   user: AuthUserLike,
   kind: RecordKind,
 ): Promise<Record<string, unknown> | null> {
+  // Payment visibility was tenant-wide for Finance/CRM; Sales is owner-scoped
+  // to the booking relationship, matching the rest of the Sales workflow.
+  if (kind === 'payment' && user.profileName !== 'Sales') return null;
+
   const meta: Record<RecordKind, { objectName: string; moduleName: string }> = {
     lead: { objectName: 'Lead', moduleName: 'LEAD' },
     siteVisit: { objectName: 'SiteVisit', moduleName: 'SITE_VISIT' },
     opportunity: { objectName: 'Opportunity', moduleName: 'OPPORTUNITY' },
     booking: { objectName: 'Booking', moduleName: 'BOOKING' },
     quotation: { objectName: 'Quotation', moduleName: 'QUOTATION' },
+    payment: { objectName: 'Payment', moduleName: 'PAYMENT' },
     task: { objectName: 'Task', moduleName: 'TASK' },
     followUp: { objectName: 'FollowUp', moduleName: 'FOLLOW_UP' },
     activity: { objectName: 'Activity', moduleName: 'ACTIVITY' },

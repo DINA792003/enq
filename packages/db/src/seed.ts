@@ -248,6 +248,8 @@ async function main() {
         address: 'Sector 62, Noida',
         city: 'Noida',
         state: 'UP',
+        latitude: 13.0294519,
+        longitude: 80.1952235,
         totalUnits: 200,
       },
     }),
@@ -270,6 +272,8 @@ async function main() {
         address: 'Whitefield, Bangalore',
         city: 'Bangalore',
         state: 'KA',
+        latitude: 13.003789,
+        longitude: 80.262671,
         totalUnits: 100,
       },
     }),
@@ -314,6 +318,7 @@ async function main() {
       data: {
         tenantId: tenant.id,
         creatorId: adminUser.id,
+        leadNumber: `LN${String(i + 1).padStart(6, '0')}`,
         ownerId: owner,
         projectId: project.id,
         firstName,
@@ -385,6 +390,12 @@ async function main() {
     }
   }
 
+  await prisma.sequence.upsert({
+    where: { tenantId_type: { tenantId: tenant.id, type: 'LEAD' } },
+    update: { nextValue: 150 },
+    create: { tenantId: tenant.id, type: 'LEAD', nextValue: 150 },
+  });
+
   await prisma.report.create({
     data: {
       tenantId: tenant.id,
@@ -426,7 +437,7 @@ async function main() {
       name: 'Executive Dashboard',
       description: 'Overview of all CRM metrics',
       isDefault: true,
-      layout: { widgets: ['kpi_leads', 'kpi_opportunities', 'kpi_bookings', 'kpi_payments', 'chart_lead_trend', 'chart_pipeline'] },
+      layout: [],
       createdBy: adminUser.id,
     },
   });

@@ -77,6 +77,7 @@ const PERMISSIONS = [
   { name: 'PROJECT_CREATE', label: 'Create Project', module: 'PROJECT', action: 'CREATE' },
   { name: 'PROJECT_UPDATE', label: 'Update Project', module: 'PROJECT', action: 'UPDATE' },
   { name: 'PROJECT_DELETE', label: 'Delete Project', module: 'PROJECT', action: 'DELETE' },
+  { name: 'UNIT_READ', label: 'View Unit', module: 'UNIT', action: 'READ' },
 
   // TASK
   { name: 'TASK_READ', label: 'View Task', module: 'TASK', action: 'READ' },

@@ -1,7 +1,7 @@
 import SetupSectionPage from "../../section-page";
 
 const items = {
-  "round-robin": { label: "Round Robin", description: "Configure automatic lead assignment pools.", href: "/setup/customization/round-robin" },
+  rrqueues: { label: "RRQueues", description: "Manage persistent lead assignment queues.", href: "/setup/customization/rrqueues" },
   objects: { label: "Object Manager", description: "Create and configure CRM objects and fields.", href: "/admin/object-manager" },
 };
 

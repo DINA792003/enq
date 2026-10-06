@@ -42,7 +42,7 @@ const groups = [
     title: "Customization",
     description: "Shape CRM data and user experiences.",
     items: [
-      { label: "Round Robin", href: "/setup/customization/round-robin", icon: GitBranch },
+      { label: "RRQueues", href: "/setup/customization/rrqueues", icon: GitBranch },
       { label: "Object Manager", href: "/admin/object-manager", icon: Boxes },
     ],
   },

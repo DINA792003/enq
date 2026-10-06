@@ -42,6 +42,7 @@ function DashboardAccessGuard({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/bookings") ? "BOOKING_READ" :
     pathname.startsWith("/payments") ? "PAYMENT_READ" :
     pathname.startsWith("/projects") ? "PROJECT_READ" :
+    pathname.startsWith("/dashboards") || pathname.startsWith("/dashboard/") ? "DASHBOARD_READ" :
     pathname.startsWith("/reports") ? "REPORT_VIEW" :
     null;
 
@@ -77,6 +78,8 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const pathname = usePathname();
+  const hideBreadcrumb = pathname === "/reports" || pathname.startsWith("/reports/");
 
   return (
     <AuthProvider>
@@ -87,7 +90,7 @@ export default function DashboardLayout({
             <Header onMenuClick={() => setSidebarOpen(true)} />
           </React.Suspense>
           <main className="p-4">
-            <Breadcrumb className="mb-3" />
+            {!hideBreadcrumb && <Breadcrumb className="mb-3" />}
             <ImpersonationBanner />
             <DashboardAccessGuard>
               <React.Suspense fallback={<div className="min-h-[40vh]" aria-hidden="true" />}>

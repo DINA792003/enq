@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Users, TrendingUp, Briefcase, FolderKanban, LayoutDashboard, FileText, CalendarCheck, Plus, ArrowRight } from "lucide-react";
-import { analyticsApi, opportunityApi, taskApi, activityApi } from "@/lib/api";
+import { ArrowLeft, Users, TrendingUp, Briefcase, FolderKanban, LayoutDashboard, FileText, CalendarCheck, Plus, ArrowRight, Pencil } from "lucide-react";
+import { analyticsApi, opportunityApi, taskApi, activityApi, homepageApi, profileApi } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
 
 const profileConfig: Record<string, { title: string; description: string; accent: string; modules: string[] }> = {
   marketing: {
@@ -63,6 +64,18 @@ const profileConfig: Record<string, { title: string; description: string; accent
     accent: "bg-slate-100 text-slate-700",
     modules: ["Users", "Profiles", "Permissions", "Settings"],
   },
+  "standard-user": {
+    title: "Standard User",
+    description: "Daily CRM activity and role-specific operational overview.",
+    accent: "bg-blue-100 text-blue-700",
+    modules: ["Leads", "Opportunities", "Tasks", "Reports"],
+  },
+  "system-administrator": {
+    title: "System Administrator",
+    description: "System configuration, user access, and organization-wide oversight.",
+    accent: "bg-slate-100 text-slate-700",
+    modules: ["Users", "Profiles", "Permissions", "Settings"],
+  },
   "crm-admin": {
     title: "CRM Admin",
     description: "CRM administration, governance, and operational support.",
@@ -73,6 +86,15 @@ const profileConfig: Record<string, { title: string; description: string; accent
 
 function normalizeProfileKey(name: string) {
   return name.toLowerCase().replace(/\s+/g, "-");
+}
+
+function profileSlug(name: string) {
+  return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function responseItems(response: any) {
+  const data = response?.data?.data ?? response?.data;
+  return Array.isArray(data) ? data : data?.profiles ?? data?.homepages ?? [];
 }
 
 function getModuleIcon(module: string) {
@@ -119,7 +141,10 @@ const formatTimeAgo = (value: string) => {
 
 export default function ProfileLandingPage() {
   const params = useParams<{ profileName: string }>();
+  const { hasPermission, isAdmin, isSuperAdmin } = useAuth();
+  const canEditProfileHome = isAdmin || isSuperAdmin;
   const [loading, setLoading] = React.useState(true);
+  const [homepageId, setHomepageId] = React.useState<string | null>(null);
   const [kpis, setKpis] = React.useState<any[]>([]);
   const [recentOpportunities, setRecentOpportunities] = React.useState<any[]>([]);
   const [pipelineStages, setPipelineStages] = React.useState<any[]>([]);
@@ -130,6 +155,11 @@ export default function ProfileLandingPage() {
     title: "",
     description: "",
   });
+  const currentProfileKey = profileSlug((params.profileName || "").replace(/-/g, " "));
+  const shouldShowProfileEditButton = isAdmin && ["pre-sales", "sales", "svc", "standard", "standard-user"].includes(currentProfileKey);
+  const profileEditHref = homepageId
+    ? `/admin/customize-home/${encodeURIComponent(homepageId)}?profile=${encodeURIComponent(localPage.title)}`
+    : `/admin/customize-home/create?profile=${encodeURIComponent(localPage.title)}`;
 
   React.useEffect(() => {
     const rawName = (params.profileName || "").replace(/-/g, " ");
@@ -146,6 +176,30 @@ export default function ProfileLandingPage() {
 
     setLoading(false);
   }, [params.profileName]);
+
+  React.useEffect(() => {
+    if (!canEditProfileHome) return;
+    let active = true;
+    Promise.all([profileApi.list(), homepageApi.list()])
+      .then(([profilesResponse, homepagesResponse]) => {
+        const profileName = profileSlug((params.profileName || "").replace(/-/g, " "));
+        const selectedProfile = responseItems(profilesResponse).find(
+          (profile: any) => profileSlug(profile.name || "") === profileName,
+        );
+        const homepage = selectedProfile && responseItems(homepagesResponse).find((item: any) =>
+          (item.sharedProfiles || []).some(
+            (share: any) => (share.profile?.id || share.profileId) === selectedProfile.id,
+          ),
+        );
+        if (active) setHomepageId(homepage?.id || null);
+      })
+      .catch(() => {
+        if (active) setHomepageId(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [canEditProfileHome, params.profileName]);
 
   React.useEffect(() => {
     let active = true;
@@ -242,15 +296,33 @@ export default function ProfileLandingPage() {
           </div>
         </div>
         <div className="flex gap-2">
+          {shouldShowProfileEditButton && (
+            <Button variant="outline" asChild>
+              <Link href={profileEditHref}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Link>
+            </Button>
+          )}
+          {canEditProfileHome && homepageId && (
+            <Button variant="outline" asChild>
+              <Link href={`/admin/customize-home/${encodeURIComponent(homepageId)}?profile=${encodeURIComponent(localPage.title)}`}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit Home Page
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" asChild>
             <Link href="/reports">View Reports</Link>
           </Button>
-          <Button asChild>
-            <Link href="/leads/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New Lead
-            </Link>
-          </Button>
+          {hasPermission("Lead", "create") && (
+            <Button asChild>
+              <Link href="/leads/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New Lead
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 

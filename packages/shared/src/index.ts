@@ -89,7 +89,10 @@ export const loginSchema = z.object({
 
 export const leadSchema = z.object({
   firstName: z.string().optional(),
-  lastName: z.string().min(1, 'Last name is required'),
+  lastName: z.string({
+    required_error: 'Last name is required',
+    invalid_type_error: 'Last name is required',
+  }).trim().min(1, 'Last name is required'),
   salutation: z.enum(['MR', 'MS', 'MRS', 'DR', 'PROF']).optional(),
   title: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
@@ -99,11 +102,17 @@ export const leadSchema = z.object({
   }).trim().min(1, 'Phone number is required.').transform(normalizePhone),
   mobile: z.string().optional(),
   website: z.string().url().optional().or(z.literal('')),
-  company: z.string().min(1, 'Company is required'),
+  company: z.string({
+    required_error: 'Company is required',
+    invalid_type_error: 'Company is required',
+  }).trim().min(1, 'Company is required'),
   industry: z.enum(['TECHNOLOGY', 'HEALTHCARE', 'FINANCE', 'EDUCATION', 'MANUFACTURING', 'RETAIL', 'REAL_ESTATE', 'CONSTRUCTION', 'HOSPITALITY', 'AUTOMOTIVE', 'ENERGY', 'TELECOMMUNICATIONS', 'MEDIA', 'GOVERNMENT', 'OTHER']).optional(),
   annualRevenue: z.number().optional(),
   numberOfEmployees: z.number().optional(),
-  source: z.enum(['WEBSITE', 'REFERRAL', 'COLD_CALL', 'ADVERTISEMENT', 'WALK_IN', 'PORTAL', 'INSTAGRAM', 'TWITTER', 'WHATSAPP', 'YOUTUBE', 'OTHER']).default('OTHER'),
+  source: z.enum(['WEBSITE', 'REFERRAL', 'COLD_CALL', 'ADVERTISEMENT', 'WALK_IN', 'PORTAL', 'INSTAGRAM', 'TWITTER', 'WHATSAPP', 'YOUTUBE', 'OTHER'], {
+    required_error: 'Lead Source is required.',
+    invalid_type_error: 'Lead Source is required.',
+  }),
   status: z.enum(['NEW', 'INCOMING', 'PROSPECT', 'SITE_VISIT_SCHEDULED', 'SITE_VISIT_HAPPENED', 'BOOKED', 'LOST']).optional(),
   rating: z.enum(['HOT', 'WARM', 'COLD']).optional(),
   description: z.string().optional(),
@@ -117,13 +126,14 @@ export const leadSchema = z.object({
   requirements: z.string().optional(),
   notes: z.string().optional(),
   ownerId: z.string().optional(),
-  projectId: z.string().optional(),
-});
+  projectId: z.string().nullable().optional(),
+}).strict();
 
 export const leadCreateSchema = leadSchema.omit({
-  status: true,
   ownerId: true,
 });
+
+export const leadUpdateSchema = leadSchema.partial().strip();
 
 export const siteVisitSchema = z.object({
   leadId: z.string().min(1),

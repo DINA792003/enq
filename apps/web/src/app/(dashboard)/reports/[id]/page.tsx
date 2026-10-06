@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/exhaustive-deps */
 
 import * as React from "react";
 import Link from "next/link";
@@ -10,6 +11,8 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  Search,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,7 +106,7 @@ export default function ReportDetailsPage() {
   const [availableFields, setAvailableFields] = React.useState<AvailableReportField[]>([]);
   const filtersHydratedRef = React.useRef(false);
   const transientPreviewRef = React.useRef(false);
-  const previewLoadedRef = React.useRef(false);
+  const previewLoadedRef = React.useRef<string | null>(null);
 
   const reportFilters = Array.isArray(report?.filters)
     ? (report.filters as ReportFilter[])
@@ -169,9 +172,27 @@ export default function ReportDetailsPage() {
       matchesResultSearch(row) && matchesResultDate(row),
     [matchesResultDate, matchesResultSearch],
   );
-  const filteredResultRows = result?.rows || [];
-  const filteredGroups = result?.groups || [];
-  const filteredPivotRows = result?.pivot?.rows || [];
+  const filteredResultRows = result?.rows.filter(matchesResultRow) || [];
+  const filteredGroups = result?.groups?.map((group) => {
+    const groupMatches = matchesResultSearch({
+      ...group.groupValues,
+      group: group.group,
+    });
+    const rows = (group.rows || []).filter(matchesResultRow);
+    return { ...group, rows: groupMatches ? group.rows : rows };
+  }).filter((group) =>
+    matchesResultSearch({ ...group.groupValues, group: group.group }) ||
+    (group.rows?.length || 0) > 0,
+  ) || [];
+  const filteredPivotRows = result?.pivot?.rows.filter((row) => {
+    const query = resultSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      row.group,
+      ...Object.values(row.groupValues || {}),
+      ...Object.values(row.values),
+    ].some((value) => String(value ?? "").toLowerCase().includes(query));
+  }) || [];
   const pivotIsAdditive = result?.pivot?.aggregate?.function === "count" || result?.pivot?.aggregate?.function === "sum";
   const savedRowGroupsFromReport = report?.rowGroups?.length
     ? report.rowGroups
@@ -201,10 +222,16 @@ export default function ReportDetailsPage() {
       setError("");
       const isNewPreview = reportId === "preview";
       const previewKey = `report-preview:${isNewPreview ? "new" : reportId}`;
+      if (isNewPreview && previewLoadedRef.current === previewKey) {
+        // Already hydrated by the first invocation (StrictMode double-run):
+        // do not wipe the preview result that was just restored.
+        return;
+      }
+      setRunError("");
+      setResult(null);
       const previewRaw = sessionStorage.getItem(previewKey);
       let savedReport: Report | null = null;
       if (isNewPreview) {
-        if (previewLoadedRef.current) return;
         if (!previewRaw) {
           router.replace("/reports/new");
           return;
@@ -224,7 +251,7 @@ export default function ReportDetailsPage() {
       let previewResult: ReportResult | null = null;
       if (previewRaw) {
         sessionStorage.removeItem(previewKey);
-        previewLoadedRef.current = true;
+        previewLoadedRef.current = previewKey;
         try {
           const preview = JSON.parse(previewRaw);
           previewResult = preview?.result || null;
@@ -237,6 +264,9 @@ export default function ReportDetailsPage() {
         } catch {
           loadedReport = savedReport;
         }
+      } else {
+        previewLoadedRef.current = null;
+        transientPreviewRef.current = false;
       }
       setReport(loadedReport);
       if (previewResult) setResult(previewResult);
@@ -302,7 +332,6 @@ export default function ReportDetailsPage() {
           crossFilter: report.crossFilter || undefined,
           sortBy: report.sortBy || undefined,
           sortOrder: report.sortOrder === "asc" ? "asc" : "desc",
-          search: resultSearch.trim() || undefined,
           resultDateField: activeResultDateField || undefined,
           resultFrom: resultFrom || undefined,
           resultTo: resultTo || undefined,
@@ -324,7 +353,7 @@ export default function ReportDetailsPage() {
     if (!result) return;
     const timer = window.setTimeout(() => void runReport(), 300);
     return () => window.clearTimeout(timer);
-  }, [resultSearch, resultDateField, resultFrom, resultTo]);
+  }, [resultDateField, resultFrom, resultTo]);
 
   if (loading)
     return (
@@ -374,6 +403,26 @@ export default function ReportDetailsPage() {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <div className="relative hidden sm:block">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={resultSearch}
+              onChange={(event) => setResultSearch(event.target.value)}
+              placeholder="Search report"
+              aria-label="Search report"
+              className="h-8 w-40 rounded-md border border-slate-300 bg-white pl-8 pr-8 text-sm text-slate-700 outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+            {resultSearch && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setResultSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-slate-700"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <Button
             variant={filtersOpen ? "default" : "outline"}
             size="icon"

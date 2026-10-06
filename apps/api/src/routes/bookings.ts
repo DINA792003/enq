@@ -8,6 +8,8 @@ import {
   applyScope,
   canAccessBooking,
   canAccessLeadId,
+  canAccessOpportunity,
+  canAccessQuotation,
   getScopeClause,
 } from '../services/recordAccess';
 
@@ -133,37 +135,115 @@ router.post('/', authorize('Booking', 'create'), async (req: AuthRequest, res: R
     const { tenantId, id: userId } = req.user!;
     const data = bookingSchema.parse(req.body);
 
-    if (data.leadId && !(await canAccessLeadId(req.user!, data.leadId))) {
+    const [lead, opportunity, quotation, project, unit] = await Promise.all([
+      data.leadId
+        ? prisma.lead.findFirst({ where: { id: data.leadId, tenantId }, select: { id: true } })
+        : null,
+      data.opportunityId
+        ? prisma.opportunity.findFirst({
+            where: { id: data.opportunityId, tenantId },
+            select: { id: true, tenantId: true, ownerId: true, creatorId: true, leadId: true, projectId: true },
+          })
+        : null,
+      data.quotationId
+        ? prisma.quotation.findFirst({
+            where: { id: data.quotationId, tenantId },
+            select: { id: true, tenantId: true, leadId: true, opportunityId: true, projectId: true },
+          })
+        : null,
+      prisma.project.findFirst({
+        where: { id: data.projectId, tenantId, isActive: true },
+        select: { id: true },
+      }),
+      prisma.unit.findFirst({
+        where: { id: data.unitId, tenantId, projectId: data.projectId, status: 'AVAILABLE' },
+        select: { id: true },
+      }),
+    ]);
+    if (data.leadId && !lead) {
+      return res.status(404).json({ success: false, error: 'Lead not found' });
+    }
+    if (data.opportunityId && !opportunity) {
+      return res.status(404).json({ success: false, error: 'Opportunity not found' });
+    }
+    if (opportunity && !(await canAccessOpportunity(req.user!, opportunity))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked opportunity' });
+    }
+    const leadAccessible = lead ? await canAccessLeadId(req.user!, lead.id) : true;
+    if (lead && !leadAccessible && opportunity?.leadId !== lead.id) {
       return res.status(403).json({ success: false, error: 'You do not have access to the linked lead' });
+    }
+    if (lead && opportunity?.leadId && opportunity.leadId !== lead.id) {
+      return res.status(400).json({ success: false, error: 'Lead does not match the linked opportunity' });
+    }
+    if (!project) {
+      return res.status(404).json({ success: false, error: 'Active project not found' });
+    }
+    if (!unit) {
+      return res.status(400).json({ success: false, error: 'Unit is unavailable or does not belong to the project' });
+    }
+    if (opportunity?.projectId && opportunity.projectId !== data.projectId) {
+      return res.status(400).json({ success: false, error: 'Project does not match the linked opportunity' });
+    }
+    if (data.quotationId && !quotation) {
+      return res.status(404).json({ success: false, error: 'Quotation not found' });
+    }
+    if (quotation && !(await canAccessQuotation(req.user!, quotation))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked quotation' });
+    }
+    if (quotation && (
+      (quotation.leadId && data.leadId && quotation.leadId !== data.leadId) ||
+      (quotation.opportunityId && data.opportunityId && quotation.opportunityId !== data.opportunityId) ||
+      (quotation.projectId && quotation.projectId !== data.projectId)
+    )) {
+      return res.status(400).json({ success: false, error: 'Booking references do not match the linked quotation' });
+    }
+    if (data.ownerId && !(await prisma.user.count({ where: { id: data.ownerId, tenantId, isActive: true } }))) {
+      return res.status(400).json({ success: false, error: 'Booking owner is invalid for this tenant' });
+    }
+    if (data.queueId && !(await prisma.queue.count({ where: { id: data.queueId, tenantId, isActive: true } }))) {
+      return res.status(400).json({ success: false, error: 'Booking queue is invalid for this tenant' });
     }
 
     const bookingNumber = data.number || `BK-${Date.now().toString(36).toUpperCase()}`;
 
-    const booking = await prisma.booking.create({
-      data: {
-        tenantId,
-        leadId: data.leadId,
-        opportunityId: data.opportunityId,
-        quotationId: data.quotationId,
-        projectId: data.projectId,
-        unitId: data.unitId,
-        ownerId: data.ownerId,
-        creatorId: userId,
-        queueId: data.queueId,
-        number: bookingNumber,
-        status: data.status || 'PENDING',
-        bookingDate: data.bookingDate ? new Date(data.bookingDate) : new Date(),
-        totalAmount: data.totalAmount,
-        notes: data.notes,
-      },
-      include: {
-        lead: { select: { id: true, firstName: true, lastName: true } },
-        unit: { select: { id: true, number: true } },
-        project: { select: { id: true, name: true } },
-      },
+    const booking = await prisma.$transaction(async (tx) => {
+      const created = await tx.booking.create({
+        data: {
+          tenantId,
+          leadId: data.leadId,
+          opportunityId: data.opportunityId,
+          quotationId: data.quotationId,
+          projectId: data.projectId,
+          unitId: data.unitId,
+          ownerId: data.ownerId,
+          creatorId: userId,
+          queueId: data.queueId,
+          number: bookingNumber,
+          status: data.status || 'PENDING',
+          bookingDate: data.bookingDate ? new Date(data.bookingDate) : new Date(),
+          totalAmount: data.totalAmount,
+          notes: data.notes,
+        },
+        include: {
+          lead: { select: { id: true, firstName: true, lastName: true } },
+          unit: { select: { id: true, number: true } },
+          project: { select: { id: true, name: true } },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          userId,
+          bookingId: created.id,
+          action: 'CREATE',
+          objectType: 'Booking',
+          objectId: created.id,
+          newValues: { number: bookingNumber, unitId: data.unitId, totalAmount: data.totalAmount },
+        },
+      });
+      return created;
     });
-
-    await auditLog(tenantId, userId, 'CREATE', 'Booking', booking.id, null, { number: bookingNumber, unitId: data.unitId, totalAmount: data.totalAmount });
 
     res.status(201).json({ success: true, data: booking });
   } catch (error: any) {

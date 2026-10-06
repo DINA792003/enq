@@ -15,16 +15,6 @@ import { LeadList, Lead } from "@/components/crm/lead-list";
 
 import { Plus, AlertCircle } from "lucide-react";
 
-const PROFILE_STATUS_MAP: Record<string, string[]> = {
-  Marketing: ["NEW", "INCOMING"],
-  Presales: ["NEW", "INCOMING"],
-  SVC: ["PROSPECT", "SITE_VISIT_SCHEDULED"],
-  Sales: ["SITE_VISIT_SCHEDULED", "SITE_VISIT_HAPPENED"],
-  CRM: ["SITE_VISIT_HAPPENED", "BOOKED"],
-  Finance: ["BOOKED"],
-  Recovery: ["LOST"],
-};
-
 const STATUS_LABELS: Record<string, string> = {
   NEW: "New",
   INCOMING: "Incoming",
@@ -47,9 +37,11 @@ const SOURCE_OPTIONS = [
   { label: "Walk-in", value: "WALK_IN" },
 ];
 
-function getAllowedStatuses(profileName: string | null | undefined): string[] {
-  if (!profileName) return ALL_STATUSES;
-  return PROFILE_STATUS_MAP[profileName] || ALL_STATUSES;
+function getAllowedStatuses(_profileName: string | null | undefined): string[] {
+  // Status filtering is server-side (record access + exact status match).
+  // Every profile may filter by any status; results are always scoped to
+  // the authenticated user's accessible leads by the API.
+  return ALL_STATUSES;
 }
 
 function mapApiLeadToLead(apiLead: any): Lead {

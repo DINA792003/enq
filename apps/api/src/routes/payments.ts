@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
 import { auditLog } from '../middleware/audit';
+import { applyScope, canAccessBooking, getScopeClause } from '../services/recordAccess';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ router.get('/', authorize('Payment', 'read'), async (req: AuthRequest, res: Resp
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = { tenantId };
+    let where: any = { tenantId };
     if (bookingId) where.bookingId = bookingId;
     if (status) where.status = status;
     if (minAmount) where.amount = { ...where.amount, gte: Number(minAmount) };
@@ -49,6 +50,7 @@ router.get('/', authorize('Payment', 'read'), async (req: AuthRequest, res: Resp
         lte: new Date(endDate as string),
       };
     }
+    where = applyScope(where, await getScopeClause(req.user!, 'payment'));
 
     const [payments, total] = await Promise.all([
       prisma.payment.findMany({
@@ -57,7 +59,14 @@ router.get('/', authorize('Payment', 'read'), async (req: AuthRequest, res: Resp
         take: Number(limit),
         orderBy: { [sortBy as string]: sortOrder },
         include: {
-          booking: { select: { id: true, number: true, unit: { select: { number: true } } } },
+          booking: {
+            select: {
+              id: true,
+              number: true,
+              unit: { select: { number: true } },
+              lead: { select: { firstName: true, lastName: true } },
+            },
+          },
         },
       }),
       prisma.payment.count({ where }),
@@ -84,7 +93,10 @@ router.get('/:id', authorize('Payment', 'read'), async (req: AuthRequest, res: R
     const { tenantId } = req.user!;
 
     const payment = await prisma.payment.findFirst({
-      where: { id: req.params.id, tenantId },
+      where: applyScope(
+        { id: req.params.id, tenantId },
+        await getScopeClause(req.user!, 'payment'),
+      ),
       include: {
         booking: {
           select: {
@@ -120,23 +132,38 @@ router.post('/', authorize('Payment', 'create'), async (req: AuthRequest, res: R
     if (!booking) {
       return res.status(404).json({ success: false, error: 'Booking not found' });
     }
+    if (req.user!.profileName === 'Sales' && !(await canAccessBooking(req.user!, booking))) {
+      return res.status(403).json({ success: false, error: 'You do not have access to the linked booking' });
+    }
 
-    const payment = await prisma.payment.create({
-      data: {
-        tenantId,
-        bookingId: data.bookingId,
-        amount: data.amount,
-        status: data.status || 'PENDING',
-        paymentDate: data.paymentDate ? new Date(data.paymentDate) : new Date(),
-        reference: data.reference,
-        notes: data.notes,
-      },
-      include: {
-        booking: { select: { id: true, number: true } },
-      },
+    const payment = await prisma.$transaction(async (tx) => {
+      const created = await tx.payment.create({
+        data: {
+          tenantId,
+          bookingId: data.bookingId,
+          amount: data.amount,
+          status: data.status || 'PENDING',
+          paymentDate: data.paymentDate ? new Date(data.paymentDate) : new Date(),
+          reference: data.reference,
+          notes: data.notes,
+        },
+        include: {
+          booking: { select: { id: true, number: true } },
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          userId,
+          bookingId: data.bookingId,
+          action: 'CREATE',
+          objectType: 'Payment',
+          objectId: created.id,
+          newValues: { amount: data.amount, bookingId: data.bookingId },
+        },
+      });
+      return created;
     });
-
-    await auditLog(tenantId, userId, 'CREATE', 'Payment', payment.id, null, { amount: data.amount, bookingId: data.bookingId });
 
     res.status(201).json({ success: true, data: payment });
   } catch (error: any) {
@@ -153,7 +180,10 @@ router.put('/:id', authorize('Payment', 'edit'), async (req: AuthRequest, res: R
     const { tenantId, id: userId } = req.user!;
 
     const existing = await prisma.payment.findFirst({
-      where: { id: req.params.id, tenantId },
+      where: applyScope(
+        { id: req.params.id, tenantId },
+        await getScopeClause(req.user!, 'payment'),
+      ),
     });
 
     if (!existing) {
@@ -165,6 +195,17 @@ router.put('/:id', authorize('Payment', 'edit'), async (req: AuthRequest, res: R
     }
 
     const data = updatePaymentSchema.parse(req.body);
+    if (data.bookingId && data.bookingId !== existing.bookingId) {
+      const booking = await prisma.booking.findFirst({
+        where: { id: data.bookingId, tenantId },
+      });
+      if (!booking) {
+        return res.status(404).json({ success: false, error: 'Booking not found' });
+      }
+      if (req.user!.profileName === 'Sales' && !(await canAccessBooking(req.user!, booking))) {
+        return res.status(403).json({ success: false, error: 'You do not have access to the linked booking' });
+      }
+    }
 
     const updateData: any = { ...data };
     if (data.paymentDate) updateData.paymentDate = new Date(data.paymentDate);
@@ -191,7 +232,10 @@ router.patch('/:id/verify', authorize('Payment', 'edit'), async (req: AuthReques
     const { tenantId, id: userId } = req.user!;
 
     const existing = await prisma.payment.findFirst({
-      where: { id: req.params.id, tenantId },
+      where: applyScope(
+        { id: req.params.id, tenantId },
+        await getScopeClause(req.user!, 'payment'),
+      ),
     });
 
     if (!existing) {

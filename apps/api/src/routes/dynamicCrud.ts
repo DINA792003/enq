@@ -79,6 +79,11 @@ router.get('/:objectName', async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ success: false, error: 'Insufficient permissions to read this object' });
     }
 
+    const object = await getObjectDefinition(req.tenantId!, objectName);
+    if (!object) {
+      return res.status(404).json({ success: false, error: 'Object not found' });
+    }
+
     const { page, limit, search, sortBy, sortOrder, ...filters } = req.query;
     const cleanFilters: Record<string, any> = {};
     for (const [key, value] of Object.entries(filters)) {
@@ -99,7 +104,7 @@ router.get('/:objectName', async (req: AuthRequest, res: Response) => {
         : await getRoleHierarchyUserIds(req.tenantId!, req.user!.id),
     });
 
-    const fieldPerms = await getUserFieldPermissions(req.tenantId!, req.user!.id, (await getObjectDefinition(req.tenantId!, objectName))?.id || '');
+    const fieldPerms = await getUserFieldPermissions(req.tenantId!, req.user!.id, object.id);
 
     result.data = result.data.map((record: any) => {
       const filtered = { ...record };
@@ -124,6 +129,11 @@ router.get('/:objectName/:id', async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ success: false, error: 'Insufficient permissions to read this object' });
     }
 
+    const object = await getObjectDefinition(req.tenantId!, objectName);
+    if (!object) {
+      return res.status(404).json({ success: false, error: 'Object not found' });
+    }
+
     let record = await getRecord(req.tenantId!, objectName, id);
     if (!record) {
       record = await getRecordByNumber(req.tenantId!, objectName, id);
@@ -136,8 +146,7 @@ router.get('/:objectName/:id', async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ success: false, error: 'You do not have access to this record' });
     }
 
-    const object = await getObjectDefinition(req.tenantId!, objectName);
-    const fieldPerms = await getUserFieldPermissions(req.tenantId!, req.user!.id, object?.id || '');
+    const fieldPerms = await getUserFieldPermissions(req.tenantId!, req.user!.id, object.id);
 
     if (fieldPerms && fieldPerms.length > 0) {
       record.data = await filterFieldsByPermission(record.data, fieldPerms, 'read');

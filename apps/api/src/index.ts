@@ -1,12 +1,11 @@
+import './loadEnv';
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
-import { existsSync } from 'fs';
-import path from 'path';
 
 import { authRoutes as authRouter } from './routes/auth';
 import { leadRoutes as leadRouter } from './routes/leads';
@@ -51,16 +50,7 @@ import setupUsersRouter from './routes/setup/users';
 import setupCompanySettingsRouter from './routes/setup/company-settings';
 import setupPersonalSettingsRouter from './routes/setup/personal-settings';
 import profileSecurityRouter from './routes/profileSecurity';
-import roundRobinRouter from './routes/roundRobin';
-
-const envPath = [
-  path.resolve(process.cwd(), '../../.env'),
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(__dirname, '../../../.env'),
-  path.resolve(__dirname, '../../../../../../.env'),
-].find(existsSync);
-
-if (envPath) dotenv.config({ path: envPath });
+import rrQueueRouter from './routes/rrQueues';
 
 export const createApp = () => {
   const app = express();
@@ -141,7 +131,7 @@ export const createApp = () => {
   app.use('/api/profile-permissions', profilePermissionRouter);
   app.use('/api/data-administration', dataAdministrationRouter);
   app.use('/api/profile-security', profileSecurityRouter);
-  app.use('/api/round-robin', roundRobinRouter);
+  app.use('/api/rrqueues', rrQueueRouter);
 
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     void req;

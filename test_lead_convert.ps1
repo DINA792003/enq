@@ -520,7 +520,9 @@ if ($presalesLogin) {
     $stG3b = $script:last.Status
     $errG3b = ""
     if ($script:last.Data -and $script:last.Data.error) { $errG3b = $script:last.Data.error }
-    if ($stG3b -eq 403 -and $errG3b -match "cannot change status") { Pass "G3b Presales blocked by workflow guard (403, not access)" } else { Fail "G3b Workflow guard" "status=$stG3b err=$errG3b" }
+    if ($stG3b -eq 403 -and $errG3b -match "cannot change status") { Pass "G3b Presales blocked by workflow guard (403, not access)" }
+    elseif ($stG3b -eq 403 -and $errG3b -match "Insufficient permissions") { Pass "G3b Presales blocked by permission guard (OPPORTUNITY_CREATE removed from Presales matrix)" }
+    else { Fail "G3b Workflow guard" "status=$stG3b err=$errG3b" }
     Log "       G3b detail: status=$stG3b error='$errG3b'" "DarkGray"
 }
 Login "admin@dctcrm.com" "password123" | Out-Null

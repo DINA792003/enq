@@ -18,8 +18,33 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const searchTerm = q as string;
     const allowedTypes = types ? (types as string).split(',') : [
-      'leads', 'opportunities', 'bookings', 'payments', 'projects', 'units', 'tasks',
+      'leads', 'opportunities', 'quotations', 'bookings', 'payments', 'siteVisits', 'projects', 'units', 'tasks',
     ];
+
+    // Every search type requires the same read permission as its own module
+    // (identical naming to authorize(object, 'read')), and scoped objects apply
+    // the same record-access clause as their list routes.
+    const TYPE_PERMS: Record<string, string> = {
+      leads: 'LEAD_READ',
+      opportunities: 'OPPORTUNITY_READ',
+      quotations: 'QUOTATION_READ',
+      bookings: 'BOOKING_READ',
+      payments: 'PAYMENT_READ',
+      siteVisits: 'SITE_VISIT_READ',
+      projects: 'PROJECT_READ',
+      units: 'UNIT_READ',
+      tasks: 'TASK_READ',
+    };
+    const TYPE_SCOPES: Record<string, 'lead' | 'quotation' | 'booking' | 'siteVisit' | 'task'> = {
+      leads: 'lead',
+      quotations: 'quotation',
+      bookings: 'booking',
+      siteVisits: 'siteVisit',
+      tasks: 'task',
+    };
+    const effectivePerms = req.user!.isSuperAdmin
+      ? null
+      : await EffectivePermissionService.getEffectivePermissionsCached(req.user!, req.user!.id);
 
     const searchConfig: Record<string, { model: any; titleField: string; subtitleField: string; urlPrefix: string; whereExtra?: any }> = {
       leads: {
@@ -35,6 +60,24 @@ router.get('/', async (req: AuthRequest, res: Response) => {
             { phone: { contains: searchTerm } },
             { email: { contains: searchTerm, mode: 'insensitive' } },
           ],
+        },
+      },
+      quotations: {
+        model: prisma.quotation,
+        titleField: 'number',
+        subtitleField: 'status',
+        urlPrefix: '/quotations',
+        whereExtra: {
+          number: { contains: searchTerm, mode: 'insensitive' },
+        },
+      },
+      siteVisits: {
+        model: prisma.siteVisit,
+        titleField: 'siteVisitNumber',
+        subtitleField: 'status',
+        urlPrefix: '/site-visits',
+        whereExtra: {
+          siteVisitNumber: { contains: searchTerm, mode: 'insensitive' },
         },
       },
       opportunities: {
@@ -107,20 +150,17 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       .filter((type) => searchConfig[type])
       .map(async (type) => {
         const config = searchConfig[type];
-        if (type === 'opportunities') {
-          const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user!, req.user!.id);
-          if (!EffectivePermissionService.hasPermissionIn(perms, 'OPPORTUNITY_READ')) return [];
+        const requiredPerm = TYPE_PERMS[type];
+        if (effectivePerms && requiredPerm && !EffectivePermissionService.hasPermissionIn(effectivePerms, requiredPerm)) {
+          return [];
         }
         const where: any = { tenantId: req.tenantId!, ...config.whereExtra };
-        if (type === 'leads') {
-          const clause = await getScopeClause(req.user!, 'lead');
-          if (clause) where.AND = [clause];
-        }
-        if (type === 'tasks') {
-          const clause = await getScopeClause(req.user!, 'task');
-          if (clause) where.AND = [clause];
-        }
         if (type === 'opportunities') Object.assign(where, await getOpportunityVisibilityFilter(req.tenantId!, req.user!.id, 'read'));
+        const scopeKind = TYPE_SCOPES[type];
+        if (scopeKind) {
+          const clause = await getScopeClause(req.user!, scopeKind);
+          if (clause) where.AND = [...(where.AND || []), clause];
+        }
         if (status && type !== 'payments') where.status = status;
         if (owner && ['leads', 'opportunities', 'tasks'].includes(type)) where.ownerId = owner;
 
@@ -163,7 +203,10 @@ router.get('/quick', async (req: AuthRequest, res: Response) => {
     const numLimit = Number(limit);
 
     const perms = await EffectivePermissionService.getEffectivePermissionsCached(req.user!, req.user!.id);
-    const canReadOpportunities = EffectivePermissionService.hasPermissionIn(perms, 'OPPORTUNITY_READ');
+    const isSuper = !!req.user!.isSuperAdmin;
+    const canReadOpportunities = isSuper || EffectivePermissionService.hasPermissionIn(perms, 'OPPORTUNITY_READ');
+    const canReadLeads = isSuper || EffectivePermissionService.hasPermissionIn(perms, 'LEAD_READ');
+    const canReadTasks = isSuper || EffectivePermissionService.hasPermissionIn(perms, 'TASK_READ');
     const opportunityWhere = canReadOpportunities
       ? await getOpportunityVisibilityFilter(req.tenantId!, req.user!.id, 'read')
       : { id: { in: [] as string[] } };
@@ -171,22 +214,26 @@ router.get('/quick', async (req: AuthRequest, res: Response) => {
     const leadScope = await getScopeClause(req.user!, 'lead');
     const taskScope = await getScopeClause(req.user!, 'task');
 
-    const leadWhere: any = {
-      tenantId: req.tenantId!,
-      OR: [
-        { leadNumber: { contains: searchTerm, mode: 'insensitive' } },
-        { firstName: { contains: searchTerm, mode: 'insensitive' } },
-        { lastName: { contains: searchTerm, mode: 'insensitive' } },
-        { phone: { contains: searchTerm } },
-      ],
-    };
-    if (leadScope) leadWhere.AND = [leadScope];
+    const leadWhere: any = canReadLeads
+      ? {
+          tenantId: req.tenantId!,
+          OR: [
+            { leadNumber: { contains: searchTerm, mode: 'insensitive' } },
+            { firstName: { contains: searchTerm, mode: 'insensitive' } },
+            { lastName: { contains: searchTerm, mode: 'insensitive' } },
+            { phone: { contains: searchTerm } },
+          ],
+        }
+      : { id: { in: [] as string[] } };
+    if (leadScope && canReadLeads) leadWhere.AND = [leadScope];
 
-    const taskWhere: any = {
-      tenantId: req.tenantId!,
-      title: { contains: searchTerm, mode: 'insensitive' },
-    };
-    if (taskScope) taskWhere.AND = [taskScope];
+    const taskWhere: any = canReadTasks
+      ? {
+          tenantId: req.tenantId!,
+          title: { contains: searchTerm, mode: 'insensitive' },
+        }
+      : { id: { in: [] as string[] } };
+    if (taskScope && canReadTasks) taskWhere.AND = [taskScope];
 
     const [leads, opportunities, tasks] = await Promise.all([
       prisma.lead.findMany({

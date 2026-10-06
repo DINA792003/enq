@@ -17,6 +17,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { paymentApi } from "@/lib/api";
+import { bookingApi } from "@/lib/api";
+import { useAuth } from "@/contexts/auth-context";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Payment {
   id: string;
@@ -165,10 +185,92 @@ const columns: ColumnDef<Payment>[] = [
 export default function PaymentsPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { hasEffectivePermission } = useAuth();
   const [currentPage, setCurrentPage] = React.useState(1);
   const [payments, setPayments] = React.useState<Payment[]>([]);
   const [totalItems, setTotalItems] = React.useState(0);
   const [isLoading, setIsLoading] = React.useState(true);
+  const [recordPaymentOpen, setRecordPaymentOpen] = React.useState(false);
+  const [isSavingPayment, setIsSavingPayment] = React.useState(false);
+  const [isLoadingBookings, setIsLoadingBookings] = React.useState(false);
+  const [availableBookings, setAvailableBookings] = React.useState<any[]>([]);
+  const [paymentBookingId, setPaymentBookingId] = React.useState("");
+  const [paymentAmount, setPaymentAmount] = React.useState("");
+  const [paymentDate, setPaymentDate] = React.useState("");
+  const [paymentReference, setPaymentReference] = React.useState("");
+  const [paymentNotes, setPaymentNotes] = React.useState("");
+
+  const openRecordPayment = async () => {
+    setIsLoadingBookings(true);
+    try {
+      const response = await bookingApi.list({ page: 1, limit: 100 });
+      const bookings = (response.data.data || []).filter(
+        (booking: any) => !["CANCELLED", "COMPLETED"].includes(booking.status),
+      );
+      setAvailableBookings(bookings);
+      setPaymentBookingId("");
+      setRecordPaymentOpen(true);
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.response?.data?.error || "Failed to load accessible bookings",
+        variant: "destructive" as any,
+      });
+    } finally {
+      setIsLoadingBookings(false);
+    }
+  };
+
+  const handleRecordPayment = async () => {
+    const amount = Number(paymentAmount);
+    if (!paymentBookingId || !Number.isFinite(amount) || amount <= 0) {
+      toast({ title: "Validation", description: "Select a booking and enter a valid amount", variant: "destructive" as any });
+      return;
+    }
+
+    setIsSavingPayment(true);
+    try {
+      const response = await paymentApi.create({
+        bookingId: paymentBookingId,
+        amount,
+        paymentDate: paymentDate ? new Date(`${paymentDate}T00:00:00`).toISOString() : undefined,
+        reference: paymentReference.trim() || undefined,
+        notes: paymentNotes.trim() || undefined,
+      });
+      const created = response.data.data;
+      const booking = availableBookings.find((item) => item.id === paymentBookingId);
+      const payment: Payment = {
+        id: created.id,
+        paymentNumber: created.reference || created.id.slice(-8).toUpperCase(),
+        leadName: booking?.lead
+          ? `${booking.lead.firstName} ${booking.lead.lastName}`.trim()
+          : "—",
+        bookingNumber: booking?.number || "—",
+        bookingId: booking?.id,
+        amount: created.amount,
+        method: "online",
+        status: (created.status || "PENDING").toLowerCase() as Payment["status"],
+        paymentDate: created.paymentDate || created.createdAt,
+        reference: created.reference,
+      };
+      setPayments((items) => [payment, ...items].slice(0, 20));
+      setTotalItems((total) => total + 1);
+      setRecordPaymentOpen(false);
+      setPaymentAmount("");
+      setPaymentDate("");
+      setPaymentReference("");
+      setPaymentNotes("");
+      toast({ title: "Success", description: "Payment recorded successfully" });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.response?.data?.error || "Failed to record payment",
+        variant: "destructive" as any,
+      });
+    } finally {
+      setIsSavingPayment(false);
+    }
+  };
 
   React.useEffect(() => {
     const fetchPayments = async () => {
@@ -243,10 +345,12 @@ export default function PaymentsPage() {
             <Download className="mr-2 h-4 w-4" />
             Export
           </Button>
-          <Button onClick={() => toast({ title: "Record Payment", description: "Record payment form coming soon" })}>
-            <Plus className="mr-2 h-4 w-4" />
-            Record Payment
-          </Button>
+          {hasEffectivePermission("PAYMENT_CREATE") && (
+            <Button onClick={openRecordPayment} disabled={isLoadingBookings}>
+              <Plus className="mr-2 h-4 w-4" />
+              {isLoadingBookings ? "Loading bookings..." : "Record Payment"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -260,6 +364,57 @@ export default function PaymentsPage() {
           onPageChange={setCurrentPage}
           serverPagination
         />
+
+        <Dialog open={recordPaymentOpen} onOpenChange={setRecordPaymentOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Record Payment</DialogTitle>
+              <DialogDescription>Select an accessible active booking and enter its payment details.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="payment-booking">Booking *</Label>
+                <Select value={paymentBookingId} onValueChange={setPaymentBookingId}>
+                  <SelectTrigger id="payment-booking" disabled={availableBookings.length === 0}>
+                    <SelectValue placeholder="Select a booking" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableBookings.map((booking) => (
+                      <SelectItem key={booking.id} value={booking.id}>
+                        {booking.number} · {booking.project?.name || "Project"} · Unit {booking.unit?.number || "—"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {availableBookings.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No accessible active bookings are available.</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment-amount">Amount *</Label>
+                <Input id="payment-amount" type="number" min="0.01" step="0.01" value={paymentAmount} onChange={(event) => setPaymentAmount(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment-date">Payment Date</Label>
+                <Input id="payment-date" type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment-reference">Reference</Label>
+                <Input id="payment-reference" maxLength={200} value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payment-notes">Notes</Label>
+                <Textarea id="payment-notes" maxLength={2000} value={paymentNotes} onChange={(event) => setPaymentNotes(event.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRecordPaymentOpen(false)} disabled={isSavingPayment}>Cancel</Button>
+              <Button onClick={handleRecordPayment} disabled={isSavingPayment || !availableBookings.length}>
+                {isSavingPayment ? "Recording..." : "Record Payment"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
     </div>
   );
 }

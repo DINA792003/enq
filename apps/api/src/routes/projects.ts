@@ -17,21 +17,36 @@ const projectSchema = z.object({
   city: z.string().max(100).optional(),
   state: z.string().max(100).optional(),
   zipCode: z.string().max(20).optional(),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
   totalUnits: z.number().int().min(0).optional(),
 });
 
 const updateProjectSchema = projectSchema.partial();
 
+function withLocationUrl<T extends { latitude: number | null; longitude: number | null }>(project: T) {
+  return {
+    ...project,
+    locationUrl: project.latitude != null && project.longitude != null
+      ? `https://www.google.com/maps/search/?api=1&query=${project.latitude},${project.longitude}`
+      : null,
+  };
+}
+
 router.get('/', authenticate, authorize('Project', 'read'), async (req: AuthRequest, res: Response) => {
   try {
     const { tenantId } = req.user!;
-    const { page = 1, limit = 50, search, status, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+    const { page = 1, limit = 50, search, isActive, sortBy = 'createdAt', sortOrder = 'desc' } = req.query;
+
+    if (isActive !== undefined && isActive !== 'true' && isActive !== 'false') {
+      return res.status(400).json({ success: false, error: 'Invalid project active filter' });
+    }
 
     const skip = (Number(page) - 1) * Number(limit);
 
     const where: Prisma.ProjectWhereInput = {
       tenantId,
-      ...(status && { status: status as any }),
+      ...(isActive !== undefined && { isActive: isActive === 'true' }),
       ...(search && {
         OR: [
           { name: { contains: search as string, mode: 'insensitive' } },
@@ -56,7 +71,7 @@ router.get('/', authenticate, authorize('Project', 'read'), async (req: AuthRequ
 
     const response: PaginatedResponse<typeof projects[0]> = {
       success: true,
-      data: projects,
+      data: projects.map(withLocationUrl),
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -91,7 +106,7 @@ router.get('/:id', authenticate, authorize('Project', 'read'), async (req: AuthR
       return res.status(404).json({ success: false, error: 'Project not found' });
     }
 
-    res.json({ success: true, data: project });
+    res.json({ success: true, data: withLocationUrl(project) });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to fetch project' });
   }
@@ -111,7 +126,7 @@ router.post('/', authenticate, authorize('Project', 'create'), async (req: AuthR
 
     await auditLog(tenantId, userId, 'CREATE', 'Project', project.id, null, { name: data.name, address: data.address });
 
-    res.status(201).json({ success: true, data: project });
+    res.status(201).json({ success: true, data: withLocationUrl(project) });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors });
@@ -138,7 +153,7 @@ router.put('/:id', authenticate, authorize('Project', 'edit'), async (req: AuthR
 
     await auditLog(tenantId, userId, 'UPDATE', 'Project', id, null, data);
 
-    res.json({ success: true, data: project });
+    res.json({ success: true, data: withLocationUrl(project) });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ success: false, error: 'Validation failed', details: error.errors });

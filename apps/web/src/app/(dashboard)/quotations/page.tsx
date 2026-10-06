@@ -54,6 +54,35 @@ const formatDate = (value: string) => {
   }).format(new Date(value));
 };
 
+async function downloadQuotationPdfFile(id: string, quotationNumber: string) {
+  const response = await quotationApi.downloadPdf(id);
+  const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${quotationNumber || "quotation"}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function DownloadQuotationItem({ quotation }: { quotation: Quotation }) {
+  const { toast } = useToast();
+
+  return (
+    <DropdownMenuItem onSelect={() => {
+      void downloadQuotationPdfFile(quotation.id, quotation.quotationNumber).then(() => {
+        toast({ title: "Quotation downloaded", description: `${quotation.quotationNumber} was saved to your downloads.` });
+      }).catch(() => {
+        toast({ title: "Error", description: "Failed to download quotation PDF", variant: "destructive" as any });
+      });
+    }}>
+      <Download className="mr-2 h-4 w-4" />
+      Download PDF
+    </DropdownMenuItem>
+  );
+}
+
 const columns: ColumnDef<Quotation>[] = [
   {
     accessorKey: "quotationNumber",
@@ -122,10 +151,7 @@ const columns: ColumnDef<Quotation>[] = [
               <Send className="mr-2 h-4 w-4" />
               Send
             </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Download className="mr-2 h-4 w-4" />
-              Download PDF
-            </DropdownMenuItem>
+            <DownloadQuotationItem quotation={quotation} />
             <DropdownMenuItem className="text-destructive">
               <Trash2 className="mr-2 h-4 w-4" />
               Delete

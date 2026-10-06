@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { flushSync } from "react-dom";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   DragDropContext,
   Draggable,
@@ -719,6 +719,7 @@ const resizeHandles = {
 export default function CustomizeProfileHomePage() {
   const params = useParams<{ profileName: string }>();
   const router = useRouter();
+  const profileNameOverride = useSearchParams().get("profile");
   const homepageId =
     params.profileName === "create" ? null : params.profileName;
   const [ids, setIds] = React.useState(defaultIds);
@@ -735,6 +736,7 @@ export default function CustomizeProfileHomePage() {
     React.useState<Widget["category"]>("Org Overview");
   const [profileSearch, setProfileSearch] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
+  const [optionsOpen, setOptionsOpen] = React.useState(false);
   const [profilePickerOpen, setProfilePickerOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [loading, setLoading] = React.useState(Boolean(homepageId));
@@ -775,7 +777,14 @@ export default function CustomizeProfileHomePage() {
             : (profileData?.profiles ?? [])) as Profile[],
         );
         const reportData = responseData(reportsResponse);
-        const loadedReportWidgets: Widget[] = (Array.isArray(reportData) ? reportData : [])
+        const reportItems = Array.isArray(reportData)
+          ? reportData
+          : Array.isArray(reportData?.items)
+            ? reportData.items
+            : Array.isArray(reportData?.reports)
+              ? reportData.reports
+              : [];
+        const loadedReportWidgets: Widget[] = reportItems
           .map((report: ReportWidgetRow) => ({
             id: `report-${report.id}`,
             title: report.name,
@@ -787,7 +796,7 @@ export default function CustomizeProfileHomePage() {
         setReportWidgets(loadedReportWidgets);
         if (homepageResponse) {
           const homepage = responseData(homepageResponse);
-          setName(homepage.name);
+          setName(profileNameOverride || homepage.name);
           setDescription(homepage.description || "");
           const saved = Array.isArray(homepage.layout) ? homepage.layout : [];
           const savedIds = saved
@@ -816,7 +825,7 @@ export default function CustomizeProfileHomePage() {
       })
       .then(() => {
         if (!homepageId) {
-          setName("Untitled Homepage");
+          setName(profileNameOverride || "Untitled Homepage");
           setDescription("");
           setIds(defaultIds);
           setLayouts(defaultLayouts(defaultIds));
@@ -828,7 +837,7 @@ export default function CustomizeProfileHomePage() {
     return () => {
       active = false;
     };
-  }, [homepageId]);
+  }, [homepageId, profileNameOverride]);
 
   React.useEffect(() => {
     if (!notice) return;
@@ -1054,6 +1063,22 @@ export default function CustomizeProfileHomePage() {
     });
     setSelectedWidgetId((current) => (current === id ? null : current));
   };
+  const restoreDefaultComponents = () => {
+    setIds(defaultIds);
+    setLayouts(defaultLayouts(defaultIds));
+    setWidgetCategory("Org Overview");
+    setWidgetSearch("");
+    setSelectedWidgetId(null);
+    setWidgetRenderVersion((version) => version + 1);
+    setOptionsOpen(false);
+  };
+  const removeAllComponents = () => {
+    setIds([]);
+    setLayouts({});
+    setSelectedWidgetId(null);
+    setWidgetRenderVersion((version) => version + 1);
+    setOptionsOpen(false);
+  };
 
   const saveHomepage = async () => {
     if (!name.trim()) {
@@ -1105,7 +1130,7 @@ export default function CustomizeProfileHomePage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => router.push("/admin/customize-home")}
+            onClick={() => router.back()}
             aria-label="Back"
           >
             <ArrowLeft className="h-5 w-5" />
@@ -1126,19 +1151,41 @@ export default function CustomizeProfileHomePage() {
                 className="mt-2 h-8 w-full rounded-md border bg-background px-3 text-sm text-muted-foreground"
               />
             </div>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label="More homepage options"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
+            <div className="relative">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="More homepage options"
+                aria-expanded={optionsOpen}
+                onClick={() => setOptionsOpen((open) => !open)}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+              {optionsOpen && (
+                <div className="absolute right-0 top-full z-30 mt-1 w-52 rounded-md border bg-background p-1 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={restoreDefaultComponents}
+                    className="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted"
+                  >
+                    Restore default components
+                  </button>
+                  <button
+                    type="button"
+                    onClick={removeAllComponents}
+                    className="w-full rounded px-3 py-2 text-left text-sm hover:bg-muted"
+                  >
+                    Remove all components
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={() => router.push("/admin/customize-home")}
+            onClick={() => router.back()}
             disabled={saving}
           >
             Cancel
@@ -1161,14 +1208,16 @@ export default function CustomizeProfileHomePage() {
             </div>
             <nav className="flex flex-1 flex-col items-center gap-2 py-3">
               {[
-                [LayoutDashboard, "Dashb..."],
+                [LayoutDashboard, "Dashboard"],
                 [BarChart3, "Reports"],
               ].map(([Icon, label]) => (
                 <button
                   key={label as string}
                   type="button"
+                  aria-label={label as string}
                   onClick={() => {
-                    if (label === "Reports") setWidgetCategory("Reports");
+                    setWidgetCategory(label === "Reports" ? "Reports" : "Org Overview");
+                    setWidgetSearch("");
                   }}
                   className="flex w-full flex-col items-center gap-1 px-1 py-2 text-[11px] hover:bg-accent hover:text-foreground"
                 >
@@ -1183,7 +1232,9 @@ export default function CustomizeProfileHomePage() {
           </aside>
           <aside className="hidden w-72 shrink-0 border-r bg-card text-foreground md:flex md:flex-col">
             <div className="border-b border-border px-5 py-4">
-              <h2 className="font-semibold">Dashboard Components</h2>
+              {widgetCategory === "Org Overview" && (
+                <h2 className="font-semibold">Dashboard Components</h2>
+              )}
               <p className="mt-1 text-xs text-muted-foreground">
                 Drag a component to the page
               </p>
@@ -1225,11 +1276,12 @@ export default function CustomizeProfileHomePage() {
                           ref={drag.innerRef}
                           {...drag.draggableProps}
                           {...drag.dragHandleProps}
+                          aria-label={`Add ${widget.title} to dashboard`}
                           style={{
                             ...drag.draggableProps.style,
                             ...(state.isDropAnimating ? { opacity: 0, transition: "none" } : {}),
                           }}
-                          className={`flex cursor-grab items-start gap-2 rounded-md border border-border bg-card px-3 py-3 text-sm ${state.isDragging ? "ring-2 ring-primary" : "hover:bg-muted/50"}`}
+                          className={`flex w-full cursor-grab items-start gap-2 rounded-md border border-border bg-card px-3 py-3 text-left text-sm ${state.isDragging ? "ring-2 ring-primary" : "hover:bg-muted/50"}`}
                         >
                           <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                           <span className="min-w-0">

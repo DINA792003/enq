@@ -10,6 +10,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 
 import { leadApi, siteVisitApi, opportunityApi, activityApi, taskApi, followUpApi, objectManagerApi, projectApi, unitApi, quotationApi, bookingApi } from "@/lib/api";
+import { getCurrentCoordinates } from "@/lib/geolocation";
 
 import LayoutDrivenForm from "@/components/admin/layout-driven-form";
 
@@ -142,6 +143,7 @@ interface LeadData {
   owner?: { id: string; firstName: string; lastName: string };
   creator?: { id: string; firstName: string; lastName: string };
   project?: { id: string; name: string };
+  projectId?: string | null;
   siteVisits?: any[];
   opportunities?: any[];
   activities?: any[];
@@ -158,6 +160,35 @@ interface LeadData {
   updatedAt: string;
 }
 
+const LEAD_EDITABLE_FIELDS = [
+  "salutation",
+  "firstName",
+  "lastName",
+  "title",
+  "email",
+  "phone",
+  "mobile",
+  "website",
+  "company",
+  "industry",
+  "annualRevenue",
+  "numberOfEmployees",
+  "source",
+  "status",
+  "rating",
+  "description",
+  "score",
+  "budget",
+  "street",
+  "city",
+  "stateProvince",
+  "country",
+  "postalCode",
+  "requirements",
+  "notes",
+  "projectId",
+] as const;
+
 export default function LeadDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -166,6 +197,7 @@ export default function LeadDetailPage() {
   const leadId = params.id as string;
 
   const [lead, setLead] = React.useState<LeadData | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isActionLoading, setIsActionLoading] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState("overview");
@@ -191,6 +223,10 @@ export default function LeadDetailPage() {
   const [svDate, setSvDate] = React.useState("");
   const [svTime, setSvTime] = React.useState("");
   const [projects, setProjects] = React.useState<any[]>([]);
+  const [projectsLoading, setProjectsLoading] = React.useState(false);
+  const [projectsError, setProjectsError] = React.useState<string | null>(null);
+  const projectsLoaded = React.useRef(false);
+  const projectsRequest = React.useRef<Promise<void> | null>(null);
 
   const [noteDialogOpen, setNoteDialogOpen] = React.useState(false);
   const [noteContent, setNoteContent] = React.useState("");
@@ -221,6 +257,7 @@ export default function LeadDetailPage() {
   const [cancelSvReason, setCancelSvReason] = React.useState("");
 
   const [completeSvDialogOpen, setCompleteSvDialogOpen] = React.useState(false);
+  const [locationConsentOpen, setLocationConsentOpen] = React.useState(false);
   const [completeSvFeedback, setCompleteSvFeedback] = React.useState("");
   const [completeSvNotes, setCompleteSvNotes] = React.useState("");
   const [completeSvTime, setCompleteSvTime] = React.useState("");
@@ -237,6 +274,7 @@ export default function LeadDetailPage() {
   const [oppUnitId, setOppUnitId] = React.useState("");
   const [oppUnits, setOppUnits] = React.useState<any[]>([]);
   const [oppUnitsLoading, setOppUnitsLoading] = React.useState(false);
+  const [oppUnitsError, setOppUnitsError] = React.useState<string | null>(null);
 
   const [createQuoteDialogOpen, setCreateQuoteDialogOpen] = React.useState(false);
   const [quoteDescription, setQuoteDescription] = React.useState("");
@@ -245,6 +283,9 @@ export default function LeadDetailPage() {
   const [createBookingDialogOpen, setCreateBookingDialogOpen] = React.useState(false);
   const [bookingProjectId, setBookingProjectId] = React.useState("");
   const [bookingUnitId, setBookingUnitId] = React.useState("");
+  const [bookingUnits, setBookingUnits] = React.useState<any[]>([]);
+  const [bookingUnitsLoading, setBookingUnitsLoading] = React.useState(false);
+  const [bookingUnitsError, setBookingUnitsError] = React.useState<string | null>(null);
   const [bookingAmount, setBookingAmount] = React.useState("");
   const [ownerDialogOpen, setOwnerDialogOpen] = React.useState(false);
   const [ownerCandidates, setOwnerCandidates] = React.useState<any[]>([]);
@@ -261,12 +302,14 @@ export default function LeadDetailPage() {
       ]);
 
       if (leadResult.status === "fulfilled" && leadResult.value.data?.success && leadResult.value.data.data) {
+        setLoadError(null);
         setLead(leadResult.value.data.data);
       } else {
         const errorMessage = leadResult.status === "rejected"
           ? "Failed to load lead"
           : leadResult.value?.data?.error || "Lead not found";
         setLead(null);
+        setLoadError(errorMessage);
         toast({ title: "Error", description: errorMessage, variant: "destructive" as any });
       }
 
@@ -279,6 +322,7 @@ export default function LeadDetailPage() {
       }
     } catch {
       setLead(null);
+      setLoadError("Failed to load lead");
       toast({ title: "Error", description: "Failed to load lead", variant: "destructive" as any });
     } finally {
       setIsLoading(false);
@@ -310,6 +354,37 @@ export default function LeadDetailPage() {
     [leadId, toast],
   );
 
+  const loadProjects = React.useCallback((force = false) => {
+    if (!force && projectsLoaded.current) return Promise.resolve();
+    if (projectsRequest.current) return projectsRequest.current;
+
+    setProjectsLoading(true);
+    setProjectsError(null);
+    const request = projectApi.listAll({ isActive: true })
+      .then((projectList) => {
+        const seenProjectIds = new globalThis.Set<string>();
+        const uniqueProjects = projectList.filter((project: { id: string }) => {
+          if (seenProjectIds.has(project.id)) return false;
+          seenProjectIds.add(project.id);
+          return true;
+        });
+        setProjects(uniqueProjects);
+        projectsLoaded.current = true;
+      })
+      .catch((error: any) => {
+        console.error("Failed to load projects for Lead workflow:", error);
+        setProjectsError(
+          error?.response?.data?.error || error?.message || "Failed to load projects. Please try again.",
+        );
+      })
+      .finally(() => {
+        projectsRequest.current = null;
+        setProjectsLoading(false);
+      });
+    projectsRequest.current = request;
+    return request;
+  }, []);
+
   React.useEffect(() => {
     fetchLead();
   }, [fetchLead]);
@@ -322,21 +397,21 @@ export default function LeadDetailPage() {
 
   React.useEffect(() => {
     if (siteVisitDialogOpen || revisitDialogOpen || createBookingDialogOpen || createOppDialogOpen) {
-      projectApi.list({ limit: 100 }).then((res) => {
-        setProjects(res.data.data || []);
-      });
+      void loadProjects();
     }
-  }, [siteVisitDialogOpen, revisitDialogOpen, createBookingDialogOpen, createOppDialogOpen]);
+  }, [siteVisitDialogOpen, revisitDialogOpen, createBookingDialogOpen, createOppDialogOpen, loadProjects]);
 
   React.useEffect(() => {
     if (!createOppDialogOpen || !oppProjectId) {
       setOppUnits([]);
       setOppUnitId("");
+      setOppUnitsError(null);
       return;
     }
 
     let cancelled = false;
     setOppUnitsLoading(true);
+    setOppUnitsError(null);
     unitApi.list({ projectId: oppProjectId, status: "AVAILABLE", limit: 100 }).then((res) => {
       if (!cancelled) {
         setOppUnits(res.data.data || []);
@@ -344,6 +419,7 @@ export default function LeadDetailPage() {
     }).catch((err) => {
       if (!cancelled) {
         setOppUnits([]);
+        setOppUnitsError(err?.response?.data?.error || "Failed to load available units");
         toast({
           title: "Error",
           description: err?.response?.data?.error || "Failed to load available units",
@@ -359,6 +435,38 @@ export default function LeadDetailPage() {
     };
   }, [createOppDialogOpen, oppProjectId, toast]);
 
+  React.useEffect(() => {
+    if (!createBookingDialogOpen || !bookingProjectId) {
+      setBookingUnits([]);
+      setBookingUnitId("");
+      setBookingUnitsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setBookingUnitsLoading(true);
+    setBookingUnitsError(null);
+    unitApi.list({ projectId: bookingProjectId, status: "AVAILABLE", limit: 100 }).then((res) => {
+      if (!cancelled) setBookingUnits(res.data.data || []);
+    }).catch((err) => {
+      if (!cancelled) {
+        setBookingUnits([]);
+        setBookingUnitsError(err?.response?.data?.error || "Failed to load available units");
+        toast({
+          title: "Error",
+          description: err?.response?.data?.error || "Failed to load available units",
+          variant: "destructive" as any,
+        });
+      }
+    }).finally(() => {
+      if (!cancelled) setBookingUnitsLoading(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createBookingDialogOpen, bookingProjectId, toast]);
+
   const profileNameLower = profile?.name?.toLowerCase() || "";
   const isAdminOrManager = profileNameLower.includes("admin") || profileNameLower.includes("manager");
   const canEditLead =
@@ -366,7 +474,7 @@ export default function LeadDetailPage() {
     hasEffectivePermission("LEAD_UPDATE") ||
     hasEffectivePermission("FULL_SYSTEM_ACCESS") ||
     isAdminOrManager;
-  const canChangeOwner = hasPermission("Lead", "edit");
+  const canChangeOwner = hasEffectivePermission("LEAD_ASSIGN");
 
   const status = lead?.status || "";
 
@@ -419,10 +527,15 @@ export default function LeadDetailPage() {
 
   const startEdit = () => {
     if (!lead) return;
-    const { leadNumber: _ln, owner: _o, creator: _c, project: _p, ...rest } = lead;
-    setEditData(rest);
+    const editableData: Record<string, any> = {};
+    for (const field of LEAD_EDITABLE_FIELDS) {
+      if (lead[field] !== undefined) editableData[field] = lead[field];
+    }
+    editableData.projectId = lead.projectId ?? lead.project?.id ?? null;
+    setEditData(editableData);
     setEditFieldErrors({});
     setIsEditing(true);
+    void loadProjects();
   };
 
   const cancelEdit = () => {
@@ -451,15 +564,13 @@ export default function LeadDetailPage() {
     setIsActionLoading(true);
     try {
       const payload: Record<string, any> = {};
-      for (const [key, value] of Object.entries(editData)) {
+      for (const key of LEAD_EDITABLE_FIELDS) {
+        const value = editData[key];
         if (value !== null && value !== undefined && value !== "") {
           payload[key] = value;
         }
       }
-      delete payload.leadNumber;
-      delete payload.id;
-      delete payload.leadStatus;
-      delete payload.leadSource;
+      if (editData.projectId === null) payload.projectId = null;
       if (payload.status === lead.status) delete payload.status;
       if (editReason.trim()) payload.reason = editReason.trim();
       await leadApi.update(leadId, payload);
@@ -490,20 +601,31 @@ export default function LeadDetailPage() {
       return;
     }
     setIsActionLoading(true);
+    let updatedLead: LeadData;
     try {
-      await leadApi.pushToSVC(leadId, { reason: pushSvcReason });
-      toast({ title: "Success", description: "Lead pushed to SVC" });
-      setPushSvcDialogOpen(false);
-      setPushSvcReason("");
-      await fetchLead();
-      if (activeTab === "audit-history") {
-        fetchAuditHistory(1);
+      const response = await leadApi.pushToSVC(leadId, { reason: pushSvcReason });
+      if (!response.data?.success || !response.data.data) {
+        throw new Error(response.data?.error || response.data?.message || "Push to SVC failed");
       }
+      updatedLead = response.data.data;
     } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.error || "Push to SVC failed", variant: "destructive" as any });
-    } finally {
+      toast({
+        title: "Error",
+        description: err?.response?.data?.error || err?.message || "Push to SVC failed",
+        variant: "destructive" as any,
+      });
       setIsActionLoading(false);
+      return;
     }
+
+    setLead((currentLead) => currentLead ? { ...currentLead, ...updatedLead } : updatedLead);
+    toast({ title: "Success", description: "Lead pushed to SVC successfully." });
+    setPushSvcDialogOpen(false);
+    setPushSvcReason("");
+    if (activeTab === "audit-history") {
+      fetchAuditHistory(1);
+    }
+    setIsActionLoading(false);
   };
 
   const handleMoveToRecovery = async () => {
@@ -530,6 +652,10 @@ export default function LeadDetailPage() {
   };
 
   const handleScheduleSiteVisit = async () => {
+    if (!svProjectId.trim()) {
+      toast({ title: "Validation", description: "A project is required", variant: "destructive" as any });
+      return;
+    }
     if (!svNote.trim()) {
       toast({ title: "Validation", description: "Note/reason is required", variant: "destructive" as any });
       return;
@@ -541,19 +667,30 @@ export default function LeadDetailPage() {
     setIsActionLoading(true);
     try {
       const scheduledAt = new Date(`${svDate}T${svTime}`).toISOString();
-      await leadApi.scheduleSiteVisit(leadId, { scheduledAt, notes: svNote, projectId: svProjectId || undefined });
-      toast({ title: "Success", description: "Site visit scheduled" });
+      const response = await leadApi.scheduleSiteVisit(leadId, { scheduledAt, notes: svNote, projectId: svProjectId });
+      const result = response.data?.data;
+      if (!response.data?.success || !result?.lead || !result?.siteVisit) {
+        throw new Error(response.data?.error || response.data?.message || "Failed to schedule site visit");
+      }
+      setLead((currentLead) => ({
+        ...(currentLead || result.lead),
+        ...result.lead,
+        siteVisits: [
+          result.siteVisit,
+          ...(currentLead?.siteVisits || []).filter((siteVisit: any) => siteVisit.id !== result.siteVisit.id),
+        ],
+      }));
+      toast({ title: "Success", description: "Site visit scheduled successfully." });
       setSiteVisitDialogOpen(false);
       setSvNote("");
       setSvDate("");
       setSvTime("");
       setSvProjectId("");
-      await fetchLead();
       if (activeTab === "audit-history") {
         fetchAuditHistory(1);
       }
     } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.error || "Failed to schedule site visit", variant: "destructive" as any });
+      toast({ title: "Error", description: err?.response?.data?.error || err?.message || "Failed to schedule site visit", variant: "destructive" as any });
     } finally {
       setIsActionLoading(false);
     }
@@ -713,7 +850,20 @@ export default function LeadDetailPage() {
     }
   };
 
-  const handleCompleteSiteVisit = async () => {
+  const handleCompleteSiteVisit = () => {
+    const activeSv = getActiveSiteVisit();
+    if (!activeSv) {
+      toast({ title: "Error", description: "No scheduled site visit found", variant: "destructive" as any });
+      return;
+    }
+    if (!completeSvTime || !completeSvFeedback.trim() || !completeSvNotes.trim()) {
+      toast({ title: "Validation", description: "Completion time, customer feedback, and notes are required", variant: "destructive" as any });
+      return;
+    }
+    setLocationConsentOpen(true);
+  };
+
+  const handleConfirmLocationAndComplete = async () => {
     const activeSv = getActiveSiteVisit();
     if (!activeSv) {
       toast({ title: "Error", description: "No scheduled site visit found", variant: "destructive" as any });
@@ -725,23 +875,33 @@ export default function LeadDetailPage() {
     }
     setIsActionLoading(true);
     try {
-      await siteVisitApi.complete(activeSv.id, {
+      const coordinates = await getCurrentCoordinates();
+      const response = await siteVisitApi.complete(activeSv.id, {
         completedAt: crmLocalDateTimeToDate(completeSvTime.split("T")[0], completeSvTime.split("T")[1]).toISOString(),
         customerFeedback: completeSvFeedback.trim(),
         completionNotes: completeSvNotes.trim(),
+        ...coordinates,
       });
+      const result = response.data.data;
+      setLead((current) => current ? {
+        ...current,
+        status: result.leadStatus || current.status,
+        siteVisits: current.siteVisits?.map((visit: any) =>
+          visit.id === activeSv.id ? { ...visit, ...result.siteVisit } : visit,
+        ),
+      } : current);
+      setLocationConsentOpen(false);
       toast({ title: "Success", description: "Site visit marked as happened" });
       setCompleteSvDialogOpen(false);
       setCompleteSvFeedback("");
       setCompleteSvNotes("");
       setCompleteSvTime("");
       setCompleteSvRating("");
-      await fetchLead();
       if (activeTab === "audit-history") {
         fetchAuditHistory(1);
       }
     } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.error || "Failed to complete site visit", variant: "destructive" as any });
+      toast({ title: "Error", description: err?.response?.data?.error || err?.message || "Failed to complete site visit", variant: "destructive" as any });
     } finally {
       setIsActionLoading(false);
     }
@@ -767,6 +927,15 @@ export default function LeadDetailPage() {
         .filter(Boolean)
         .join(" ");
       const fallbackNote = result?.ownerFallback ? " (Admin fallback)" : "";
+      setLead((current) => current ? {
+        ...current,
+        ...(result?.lead || {}),
+        status: result?.lead?.status || "BOOKED",
+        project: result?.opportunity?.project || current.project,
+        opportunities: result?.opportunity
+          ? [result.opportunity, ...(current.opportunities || []).filter((item: any) => item.id !== result.opportunity.id)]
+          : current.opportunities,
+      } : current);
       toast({
         title: "Lead converted",
         description: `${oppNumber ? `${oppNumber} created` : "Opportunity created"}${ownerName ? ` — owner: ${ownerName}` : ""}${fallbackNote}. Lead status: BOOKED`,
@@ -778,7 +947,6 @@ export default function LeadDetailPage() {
       setOppProjectId("");
       setOppUnitId("");
       setOppUnits([]);
-      await fetchLead();
     } catch (err: any) {
       toast({ title: "Error", description: err?.response?.data?.error || "Failed to create opportunity", variant: "destructive" as any });
     } finally {
@@ -797,7 +965,7 @@ export default function LeadDetailPage() {
       await quotationApi.create({
         leadId,
         opportunityId: oppId,
-        projectId: lead?.project?.id,
+        projectId: lead?.opportunities?.[0]?.projectId || lead?.siteVisits?.find((visit: any) => visit.status === "COMPLETED")?.projectId || lead?.project?.id,
         items: [
           {
             description: quoteDescription.trim(),
@@ -810,7 +978,6 @@ export default function LeadDetailPage() {
       setCreateQuoteDialogOpen(false);
       setQuoteDescription("");
       setQuoteUnitPrice("");
-      await fetchLead();
     } catch (err: any) {
       toast({ title: "Error", description: err?.response?.data?.error || "Failed to create quotation", variant: "destructive" as any });
     } finally {
@@ -839,7 +1006,7 @@ export default function LeadDetailPage() {
       setBookingProjectId("");
       setBookingUnitId("");
       setBookingAmount("");
-      await fetchLead();
+      setBookingUnits([]);
     } catch (err: any) {
       toast({ title: "Error", description: err?.response?.data?.error || "Failed to create booking", variant: "destructive" as any });
     } finally {
@@ -889,7 +1056,8 @@ export default function LeadDetailPage() {
           onClick: () => {
             setOppName(`${lead?.company || `${lead?.firstName || ""} ${lead?.lastName || ""}`.trim()} Opportunity`);
             setOppDescription(lead?.requirements || lead?.notes || "");
-            setOppProjectId(lead?.project?.id || "");
+            const completedVisit = lead?.siteVisits?.find((visit: any) => visit.status === "COMPLETED");
+            setOppProjectId(completedVisit?.project?.id || lead?.project?.id || "");
             setOppUnitId("");
             setCreateOppDialogOpen(true);
           },
@@ -899,13 +1067,29 @@ export default function LeadDetailPage() {
       if (hasEffectivePermission("QUOTATION_CREATE")) {
         actions.push({ label: "Create Quotation", onClick: () => setCreateQuoteDialogOpen(true), variant: "default" });
       }
-      if (hasEffectivePermission("BOOKING_CREATE") && (lead?.opportunities?.length || 0) > 0 && lead?.project?.id) {
-        actions.push({ label: "Create Booking", onClick: () => setCreateBookingDialogOpen(true), variant: "default" });
+      const opportunityProjectId = lead?.opportunities?.[0]?.projectId || latestSiteVisit?.projectId || lead?.project?.id;
+      if (hasEffectivePermission("BOOKING_CREATE") && (lead?.opportunities?.length || 0) > 0 && opportunityProjectId) {
+        actions.push({ label: "Create Booking", onClick: () => {
+          setBookingProjectId(opportunityProjectId);
+          setBookingUnitId("");
+          setCreateBookingDialogOpen(true);
+        }, variant: "default" });
       }
     }
 
     if (status === "BOOKED" && (lead?.opportunities?.length || 0) > 0) {
       actions.push({ label: "View Opportunity", onClick: () => router.push(`/opportunities/${lead?.opportunities?.[0]?.id}`), variant: "default" });
+      if (hasEffectivePermission("QUOTATION_CREATE")) {
+        actions.push({ label: "Create Quotation", onClick: () => setCreateQuoteDialogOpen(true), variant: "default" });
+      }
+      const opportunityProjectId = lead?.opportunities?.[0]?.projectId || lead?.siteVisits?.find((visit: any) => visit.status === "COMPLETED")?.projectId || lead?.project?.id;
+      if (hasEffectivePermission("BOOKING_CREATE") && opportunityProjectId) {
+        actions.push({ label: "Create Booking", onClick: () => {
+          setBookingProjectId(opportunityProjectId);
+          setBookingUnitId("");
+          setCreateBookingDialogOpen(true);
+        }, variant: "default" });
+      }
     }
 
     return actions;
@@ -926,15 +1110,47 @@ export default function LeadDetailPage() {
     return String(value);
   };
 
+  const AUDIT_FIELD_LABELS: Record<string, string> = {
+    ownerName: "Owner",
+    previousOwnerName: "Previous Owner",
+    newOwnerName: "New Owner",
+    changedByName: "Changed By",
+    assignmentSource: "Assignment Source",
+    assignedTo: "Assigned To",
+    cancellationReason: "Cancellation Reason",
+    completedById: "Completed By",
+    completedByName: "Completed By",
+    cancelledById: "Cancelled By",
+    changedById: "Changed By",
+    createdBy: "Created By",
+    updatedBy: "Updated By",
+    assignedById: "Assigned By",
+    performedById: "Performed By",
+  };
+
+  const auditFieldLabel = (field: string): string => {
+    if (AUDIT_FIELD_LABELS[field]) return AUDIT_FIELD_LABELS[field];
+    return field
+      .replace(/Id$/, "")
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/^./, (c) => c.toUpperCase());
+  };
+
   const getAuditChanges = (entry: any): { field: string; oldValue: any; newValue: any }[] => {
     const oldVals = entry.oldValues || {};
     const newVals = entry.newValues || {};
+    // Never render a raw user id when its display-name sibling exists —
+    // the name row is shown instead (spec: audit shows names, never raw IDs).
+    const hasNameSibling = (field: string): boolean =>
+      field.endsWith("Id") &&
+      (`${field.slice(0, -2)}Name` in oldVals || `${field.slice(0, -2)}Name` in newVals);
     const fields = new Set([...Object.keys(oldVals), ...Object.keys(newVals)]);
     const changes: { field: string; oldValue: any; newValue: any }[] = [];
 
     if (entry.action === "CREATE" || entry.action === "FOLLOW_UP_CREATED" || entry.action === "TASK_CREATED" || entry.action === "NOTE_CREATED") {
       for (const field of Object.keys(newVals)) {
         if (field === "reason" || field === "note") continue;
+        if (hasNameSibling(field)) continue;
         changes.push({ field, oldValue: null, newValue: newVals[field] });
       }
       return changes;
@@ -942,10 +1158,11 @@ export default function LeadDetailPage() {
 
     for (const field of fields) {
       if (field === "reason" || field === "note") continue;
+      if (hasNameSibling(field)) continue;
       const oldV = oldVals[field];
       const newV = newVals[field];
       if (JSON.stringify(oldV ?? null) !== JSON.stringify(newV ?? null)) {
-        changes.push({ field, oldValue: oldV, newValue: newV });
+        changes.push({ field, oldValue: field in oldVals ? oldV : undefined, newValue: newV });
       }
     }
     return changes;
@@ -984,12 +1201,34 @@ export default function LeadDetailPage() {
   if (!lead) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">Lead not found</p>
+        <p className="text-muted-foreground">{loadError || "Lead not found"}</p>
       </div>
     );
   }
 
   const leadDisplayName = `${lead.firstName ? lead.firstName + " " : ""}${lead.lastName}`;
+  const leadProjectOptions = lead.project && !projects.some((project) => project.id === lead.project?.id)
+    ? [...projects, { ...lead.project, isActive: false }]
+    : projects;
+  const renderProjectLoadState = () => {
+    if (projectsLoading) {
+      return <p role="status" className="text-sm text-muted-foreground">Loading projects...</p>;
+    }
+    if (projectsError) {
+      return (
+        <div role="alert" className="flex items-center justify-between gap-3 text-sm text-destructive">
+          <span>{projectsError}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadProjects(true)}>
+            Retry
+          </Button>
+        </div>
+      );
+    }
+    if (projectsLoaded.current && projects.length === 0) {
+      return <p role="status" className="text-sm text-muted-foreground">No projects available for this company.</p>;
+    }
+    return null;
+  };
 
   const leadProfileName = profile?.name || "";
   const isPresales = leadProfileName === "Presales";
@@ -1235,6 +1474,7 @@ export default function LeadDetailPage() {
               }
               layout={layout}
               fields={fields}
+              projects={leadProjectOptions}
               fieldErrors={isEditing ? editFieldErrors : undefined}
             />
           )}
@@ -1546,12 +1786,18 @@ export default function LeadDetailPage() {
                           <div className="space-y-1">
                             {changes.map((change, idx) => (
                               <div key={idx} className="text-xs flex flex-wrap items-center gap-1">
-                                <span className="font-medium">{change.field}:</span>
-                                <span className="text-muted-foreground">
-                                  {formatAuditValue(change.oldValue)}
-                                </span>
-                                <span aria-hidden="true">→</span>
-                                <span>{formatAuditValue(change.newValue)}</span>
+                                <span className="font-medium">{auditFieldLabel(change.field)}:</span>
+                                {change.oldValue !== undefined ? (
+                                  <>
+                                    <span className="text-muted-foreground">
+                                      {formatAuditValue(change.oldValue)}
+                                    </span>
+                                    <span aria-hidden="true">→</span>
+                                    <span>{formatAuditValue(change.newValue)}</span>
+                                  </>
+                                ) : (
+                                  <span>{formatAuditValue(change.newValue)}</span>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -1660,7 +1906,7 @@ export default function LeadDetailPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Push Lead to SVC?</DialogTitle>
-            <DialogDescription>This lead will be assigned to a Site Visit Coordinator via Round Robin.</DialogDescription>
+            <DialogDescription>This lead will be moved to the Site Visit Coordinator workflow.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="rounded-md border bg-muted/30 p-3 text-sm">
@@ -1748,7 +1994,7 @@ export default function LeadDetailPage() {
             <div className="space-y-2">
               <Label htmlFor="sv-project">Project *</Label>
               <Select value={svProjectId} onValueChange={setSvProjectId}>
-                <SelectTrigger id="sv-project">
+                <SelectTrigger id="sv-project" disabled={projectsLoading || Boolean(projectsError) || projects.length === 0}>
                   <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1757,6 +2003,7 @@ export default function LeadDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {renderProjectLoadState()}
             </div>
             <div className="space-y-2">
               <Label htmlFor="sv-note">Note / Reason *</Label>
@@ -1790,7 +2037,10 @@ export default function LeadDetailPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSiteVisitDialogOpen(false)} disabled={isActionLoading}>Cancel</Button>
-            <Button onClick={handleScheduleSiteVisit} disabled={isActionLoading}>
+            <Button
+              onClick={handleScheduleSiteVisit}
+              disabled={isActionLoading || projectsLoading || Boolean(projectsError) || !projects.length || !svProjectId || !svNote.trim() || !svDate || !svTime}
+            >
               {isActionLoading ? "Scheduling..." : "Schedule Visit"}
             </Button>
           </DialogFooter>
@@ -2046,7 +2296,7 @@ export default function LeadDetailPage() {
             <div className="space-y-2">
               <Label htmlFor="revisit-project">Project *</Label>
               <Select value={revisitProjectId} onValueChange={setRevisitProjectId}>
-                <SelectTrigger>
+                <SelectTrigger disabled={projectsLoading || Boolean(projectsError) || projects.length === 0}>
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2057,6 +2307,7 @@ export default function LeadDetailPage() {
                   ))}
                 </SelectContent>
               </Select>
+              {renderProjectLoadState()}
             </div>
             <div className="space-y-2">
               <Label htmlFor="revisit-note">Notes</Label>
@@ -2109,7 +2360,7 @@ export default function LeadDetailPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Complete Site Visit</DialogTitle>
-            <DialogDescription>Marks the site visit as happened. Lead moves to Site Visit Happened.</DialogDescription>
+            <DialogDescription>Marks the site visit as happened. Lead moves to Site Visit Happened. Location access is required, and you must be within 100 meters of the project.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
@@ -2134,6 +2385,23 @@ export default function LeadDetailPage() {
             <Button variant="outline" onClick={() => setCompleteSvDialogOpen(false)} disabled={isActionLoading}>Back</Button>
             <Button onClick={handleCompleteSiteVisit} disabled={isActionLoading || !completeSvTime || !completeSvFeedback.trim() || !completeSvNotes.trim()}>
               {isActionLoading ? "Completing..." : "Complete Site Visit"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={locationConsentOpen} onOpenChange={(open) => !isActionLoading && setLocationConsentOpen(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Allow location access</DialogTitle>
+            <DialogDescription>
+              Your device location will be checked once against {getActiveSiteVisit()?.project?.name || getActiveSiteVisit()?.projectName || lead?.project?.name || "the site-visit project"}. The visit only completes if you are within 100 meters. Choose Allow Location Access to continue. To see the browser permission prompt, set this site&apos;s Location permission to Ask in the site information panel.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLocationConsentOpen(false)} disabled={isActionLoading}>Cancel</Button>
+            <Button onClick={handleConfirmLocationAndComplete} disabled={isActionLoading}>
+              {isActionLoading ? "Checking location..." : "Allow Location Access"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2194,7 +2462,7 @@ export default function LeadDetailPage() {
                     setOppUnitId("");
                   }}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger disabled={projectsLoading || Boolean(projectsError) || projects.length === 0}>
                     <SelectValue placeholder="Select an active project" />
                   </SelectTrigger>
                   <SelectContent>
@@ -2203,6 +2471,15 @@ export default function LeadDetailPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {projectsError && (
+                  <p className="text-sm text-destructive">
+                    {projectsError}{" "}
+                    <Button type="button" variant="link" className="h-auto p-0" onClick={() => void loadProjects(true)}>Retry</Button>
+                  </p>
+                )}
+                {!projectsLoading && !projectsError && projects.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No active projects are available.</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Unit</Label>
@@ -2218,6 +2495,10 @@ export default function LeadDetailPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {oppUnitsError && <p className="text-sm text-destructive">{oppUnitsError}</p>}
+                {!oppUnitsLoading && !oppUnitsError && oppProjectId && oppUnits.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No available units for this project.</p>
+                )}
               </div>
             </div>
             {oppUnitId && (() => {
@@ -2306,8 +2587,11 @@ export default function LeadDetailPage() {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label htmlFor="booking-project">Project *</Label>
-              <Select value={bookingProjectId} onValueChange={setBookingProjectId}>
-                <SelectTrigger>
+              <Select value={bookingProjectId} onValueChange={(value) => {
+                setBookingProjectId(value);
+                setBookingUnitId("");
+              }}>
+                <SelectTrigger disabled={projectsLoading || Boolean(projectsError) || projects.length === 0}>
                   <SelectValue placeholder="Select project" />
                 </SelectTrigger>
                 <SelectContent>
@@ -2320,13 +2604,23 @@ export default function LeadDetailPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="booking-unit">Unit ID *</Label>
-              <Input
-                id="booking-unit"
-                placeholder="Unit identifier..."
-                value={bookingUnitId}
-                onChange={(e) => setBookingUnitId(e.target.value)}
-              />
+              <Label htmlFor="booking-unit">Unit *</Label>
+              <Select value={bookingUnitId} onValueChange={setBookingUnitId} disabled={!bookingProjectId || bookingUnitsLoading || bookingUnits.length === 0}>
+                <SelectTrigger id="booking-unit">
+                  <SelectValue placeholder={bookingUnitsLoading ? "Loading units..." : "Select an available unit"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {bookingUnits.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.number}{unit.type ? ` · ${unit.type}` : ""}{unit.area ? ` · ${unit.area} sq.ft` : ""}{unit.price ? ` · ₹${unit.price}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {bookingUnitsError && <p className="text-sm text-destructive">{bookingUnitsError}</p>}
+              {!bookingUnitsLoading && !bookingUnitsError && bookingProjectId && bookingUnits.length === 0 && (
+                <p className="text-sm text-muted-foreground">No available units for this project.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="booking-amount">Total Amount *</Label>

@@ -11,10 +11,10 @@ import {
   canAccessSiteVisit,
   getScopeClause,
 } from '../services/recordAccess';
-import { getNextSiteVisitNumber } from '../services/leadWorkflowExtras';
+import { getNextSiteVisitNumber, normalizeOverdueSiteVisits } from '../services/leadWorkflowExtras';
 import { canTransitionStatus } from '../services/workflow';
 import { createOwnerHistory } from '../services/ownerHistory';
-import { getNextSalesUser, roundRobinHandoffReason } from '../services/roundRobin';
+import { checkSiteVisitLocation } from '../services/siteVisitLocation';
 
 const router = Router();
 
@@ -37,6 +37,8 @@ const completeSiteVisitSchema = z.object({
   completedAt: z.string().datetime('Completion time is required'),
   customerFeedback: z.string().min(1, 'Customer feedback is required').refine((v) => v.trim().length > 0, 'Customer feedback is required'),
   completionNotes: z.string().min(1, 'Completion notes are required').refine((v) => v.trim().length > 0, 'Completion notes are required'),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
 });
 
 const cancelSiteVisitSchema = z.object({
@@ -58,6 +60,7 @@ const revisitSiteVisitSchema = z.object({
 router.get('/', authorize('SiteVisit', 'read'), async (req: AuthRequest, res: Response) => {
   try {
     const { tenantId } = req.user!;
+    await normalizeOverdueSiteVisits(tenantId);
     const {
       page = 1,
       limit = 20,
@@ -138,6 +141,7 @@ router.get('/', authorize('SiteVisit', 'read'), async (req: AuthRequest, res: Re
 router.get('/:id', authorize('SiteVisit', 'read'), async (req: AuthRequest, res: Response) => {
   try {
     const { tenantId } = req.user!;
+    await normalizeOverdueSiteVisits(tenantId);
 
     const siteVisit = await prisma.siteVisit.findFirst({
       where: { id: req.params.id, tenantId },
@@ -186,6 +190,9 @@ router.post('/', authorize('SiteVisit', 'create'), async (req: AuthRequest, res:
     }
 
     const siteVisitStatus = data.status || 'SCHEDULED';
+    if (siteVisitStatus === 'COMPLETED') {
+      return res.status(400).json({ success: false, error: 'Use the completion action to complete a site visit.' });
+    }
     const result = await prisma.$transaction(async (tx) => {
       const siteVisitNumber = await getNextSiteVisitNumber(tx, tenantId);
       const siteVisit = await tx.siteVisit.create({
@@ -275,6 +282,9 @@ router.put('/:id', authorize('SiteVisit', 'edit'), async (req: AuthRequest, res:
     }
 
     const data = updateSiteVisitSchema.parse(req.body);
+    if (data.status === 'COMPLETED') {
+      return res.status(400).json({ success: false, error: 'Use the completion action to complete a site visit.' });
+    }
 
     const updateData: any = { ...data };
     if (data.scheduledAt) updateData.scheduledAt = new Date(data.scheduledAt);
@@ -303,11 +313,14 @@ router.patch('/:id/complete', authorize('SiteVisit', 'edit'), async (req: AuthRe
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: parsed.error.errors[0]?.message || 'Completion details are required' });
     }
-    const { completedAt, customerFeedback, completionNotes } = parsed.data;
+    const { completedAt, customerFeedback, completionNotes, latitude, longitude } = parsed.data;
 
     const existing = await prisma.siteVisit.findFirst({
       where: { id: req.params.id, tenantId },
-      include: { lead: { select: { id: true, status: true } } },
+      include: {
+        lead: { select: { id: true, status: true } },
+        project: { select: { name: true, latitude: true, longitude: true } },
+      },
     });
 
     if (!existing) {
@@ -322,6 +335,17 @@ router.patch('/:id/complete', authorize('SiteVisit', 'edit'), async (req: AuthRe
       return res.status(400).json({ success: false, error: 'Only scheduled site visits can be completed' });
     }
 
+    const locationCheck = checkSiteVisitLocation(
+      existing.project?.name,
+      existing.project?.latitude,
+      existing.project?.longitude,
+      latitude,
+      longitude,
+    );
+    if (!locationCheck.allowed) {
+      return res.status(400).json({ success: false, error: locationCheck.error });
+    }
+
     const profileName = req.user!.profileName || 'Admin';
     if (
       existing.lead &&
@@ -330,6 +354,15 @@ router.patch('/:id/complete', authorize('SiteVisit', 'edit'), async (req: AuthRe
     ) {
       return res.status(403).json({ success: false, error: 'Not authorized to complete this site visit' });
     }
+
+    const completedBy = await prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      select: { firstName: true, lastName: true },
+    });
+    if (!completedBy) {
+      return res.status(401).json({ success: false, error: 'Authenticated user is no longer available' });
+    }
+    const completedByName = `${completedBy.firstName} ${completedBy.lastName}`.trim();
 
     const result = await prisma.$transaction(async (tx) => {
       const siteVisit = await tx.siteVisit.update({
@@ -342,13 +375,20 @@ router.patch('/:id/complete', authorize('SiteVisit', 'edit'), async (req: AuthRe
           completionNotes: completionNotes.trim(),
           feedback: customerFeedback.trim(),
         },
+        include: {
+          completedBy: { select: { id: true, firstName: true, lastName: true } },
+          project: { select: { id: true, name: true } },
+        },
       });
 
+      let leadStatus = existing.lead?.status || null;
       if (existing.lead && existing.lead.status === 'SITE_VISIT_SCHEDULED') {
-        await tx.lead.update({
+        const lead = await tx.lead.update({
           where: { id: existing.leadId },
           data: { status: 'SITE_VISIT_HAPPENED' },
+          select: { status: true },
         });
+        leadStatus = lead.status;
 
         await tx.auditLog.create({
           data: {
@@ -359,7 +399,7 @@ router.patch('/:id/complete', authorize('SiteVisit', 'edit'), async (req: AuthRe
             objectType: 'Lead',
             objectId: existing.leadId,
             oldValues: { status: 'SITE_VISIT_SCHEDULED' },
-            newValues: { status: 'SITE_VISIT_HAPPENED', siteVisitId: existing.id, completedAt, completedById: userId, customerFeedback, completionNotes },
+            newValues: { status: 'SITE_VISIT_HAPPENED', siteVisitId: existing.id, completedAt, completedById: userId, completedByName, customerFeedback, completionNotes },
           },
         });
       }
@@ -373,11 +413,11 @@ router.patch('/:id/complete', authorize('SiteVisit', 'edit'), async (req: AuthRe
           objectType: 'SiteVisit',
           objectId: siteVisit.id,
           oldValues: { status: 'SCHEDULED' },
-          newValues: { status: 'COMPLETED', completedAt, completedById: userId, customerFeedback, completionNotes },
+          newValues: { status: 'COMPLETED', completedAt, completedById: userId, completedByName, customerFeedback, completionNotes },
         },
       });
 
-      return siteVisit;
+      return { siteVisit, leadStatus };
     });
 
     res.json({ success: true, data: result });
@@ -521,10 +561,7 @@ router.post('/:id/revisit', authorize('SiteVisit', 'create'), async (req: AuthRe
 
     const result = await prisma.$transaction(async (tx) => {
       const siteVisitNumber = await getNextSiteVisitNumber(tx, tenantId);
-      const roundRobinAssignee = parsed.data.assigneeId
-        ? null
-        : await getNextSalesUser(tenantId, tx);
-      const assigneeId = parsed.data.assigneeId || roundRobinAssignee?.id || existing.assigneeId;
+      const assigneeId = parsed.data.assigneeId || existing.assigneeId;
       const siteVisit = await tx.siteVisit.create({
         data: {
           tenantId,
@@ -557,12 +594,10 @@ router.post('/:id/revisit', authorize('SiteVisit', 'create'), async (req: AuthRe
           previousOwnerId: existing.lead?.ownerId || null,
           newOwnerId: assigneeId,
           previousProfile: null,
-          newProfile: roundRobinAssignee?.profileName || null,
+          newProfile: null,
           previousStatus: existing.lead?.status || null,
           newStatus: existing.lead?.status || null,
-          handoffReason: roundRobinAssignee
-            ? roundRobinHandoffReason('SALES', roundRobinAssignee.isFallback)
-            : 'Site Visit revisit assignment',
+          handoffReason: 'Site Visit revisit assignment',
           changedById: userId,
         }, tx);
       }

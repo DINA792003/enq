@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,7 @@ import {
 import Link from "next/link";
 import { analyticsApi, opportunityApi, taskApi, activityApi, homepageApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth-context";
+import { formatDate } from "@/lib/date-format";
 
 interface HomepageWidgetLayout {
   id: string;
@@ -40,6 +41,7 @@ const defaultHomeWidgetIds = [
   "upcoming-tasks",
   "recent-activity",
 ];
+const homepageLayoutCanvasWidth = 12 * (85 + 8);
 
 const isHomepageWidgetLayout = (item: unknown): item is HomepageWidgetLayout => {
   if (typeof item !== "object" || item === null) return false;
@@ -55,7 +57,12 @@ const isHomepageWidgetLayout = (item: unknown): item is HomepageWidgetLayout => 
 };
 
 export default function HomePage() {
-  const { user, isAdmin, isSuperAdmin } = useAuth();
+  const { user, profile, roles = [], isSuperAdmin, hasPermission, hasEffectivePermission } = useAuth();
+  const hasAdminHomeAccess = isSuperAdmin ||
+    profile?.name?.trim().toLowerCase() === "admin" ||
+    roles.some((role) => role.trim().toLowerCase() === "admin");
+  const router = useRouter();
+  const canReadTasks = hasPermission("Task", "read") || hasEffectivePermission("TASK_READ");
   const searchParams = useSearchParams();
   const userName = user ? `${user.firstName || ""} ${user.lastName || ""}`.trim() || "User" : "User";
   const [kpis, setKpis] = React.useState<any[]>([]);
@@ -68,7 +75,7 @@ export default function HomePage() {
   const [homepageLayouts, setHomepageLayouts] = React.useState<HomepageWidgetLayout[] | null>(null);
   const requestedHomepageId = searchParams.get("homepage");
 
-  const fetchDashboardData = React.useCallback(async (homepageId: string | null) => {
+  const fetchDashboardData = React.useCallback(async (homepageId: string | null, isCurrent: () => boolean = () => true) => {
     setIsLoading(true);
 
     try {
@@ -76,11 +83,15 @@ export default function HomePage() {
         analyticsApi.getLeads(),
         analyticsApi.getOpportunities(),
         analyticsApi.getPipeline(),
-        taskApi.list({ limit: 5, sortBy: 'dueDate', sortOrder: 'asc' }),
+        canReadTasks
+          ? taskApi.list({ limit: 5, sortBy: 'dueDate', sortOrder: 'asc' })
+          : Promise.resolve({ data: { data: [] } }),
         activityApi.list({ limit: 5 }),
         opportunityApi.list({ limit: 3, sortBy: 'createdAt', sortOrder: 'desc' }),
       ]);
-
+      // Stale response after unmount or after a newer request started: do not
+      // overwrite state (same active-flag pattern as the homepage effect below).
+      if (!isCurrent()) return;
       const leadsData = leadsRes.status === 'fulfilled' ? leadsRes.value.data?.data : null;
       const oppData = oppRes.status === 'fulfilled' ? oppRes.value.data?.data : null;
       const pipelineData = pipelineRes.status === 'fulfilled' ? pipelineRes.value.data?.data : null;
@@ -136,21 +147,30 @@ export default function HomePage() {
     } catch (error) {
       console.error("Failed to fetch home data:", error);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
-  }, []);
+  }, [canReadTasks]);
 
   React.useEffect(() => {
-    void fetchDashboardData(requestedHomepageId);
+    let active = true;
+    void fetchDashboardData(requestedHomepageId, () => active);
+    return () => {
+      active = false;
+    };
   }, [fetchDashboardData, requestedHomepageId]);
 
   React.useEffect(() => {
     let active = true;
-    const request = requestedHomepageId ? homepageApi.get(requestedHomepageId) : homepageApi.assigned();
+    const request = requestedHomepageId && hasAdminHomeAccess
+      ? homepageApi.get(requestedHomepageId)
+      : homepageApi.assigned();
     request
       .then((response) => {
         if (!active) return;
         const homepage = response.data?.data;
+        if (!hasAdminHomeAccess && requestedHomepageId && homepage?.id !== requestedHomepageId) {
+          router.replace("/home");
+        }
         if (homepage) {
           setHomepageName(homepage.name);
           const layouts: HomepageWidgetLayout[] = Array.isArray(homepage.layout)
@@ -166,10 +186,11 @@ export default function HomePage() {
         if (active) {
           setHomepageName("Standard");
           setHomepageLayouts(null);
+          if (!hasAdminHomeAccess && requestedHomepageId) router.replace("/home");
         }
       });
     return () => { active = false; };
-  }, [requestedHomepageId]);
+  }, [hasAdminHomeAccess, requestedHomepageId, router]);
 
 
   const formatAmount = (amount: number) => {
@@ -215,7 +236,8 @@ export default function HomePage() {
   const pageTitle = hasSelectedHomepage ? homepageName : `Welcome ${userName}`;
   const hasCustomLayout = Boolean(homepageLayouts?.length);
   const showsWidget = (widgetId: string) =>
-    !homepageLayouts || homepageLayouts.some((layout) => layout.id === widgetId);
+    (canReadTasks || !["active-tasks", "upcoming-tasks"].includes(widgetId)) &&
+    (!homepageLayouts || homepageLayouts.some((layout) => layout.id === widgetId));
   const getWidgetLayout = (widgetId: string) =>
     homepageLayouts?.find((layout) => layout.id === widgetId);
   const widgetStyle = (widgetId: string): React.CSSProperties => {
@@ -223,9 +245,9 @@ export default function HomePage() {
     return layout
       ? {
           position: "absolute",
-          left: layout.x,
+          left: `${(layout.x / homepageLayoutCanvasWidth) * 100}%`,
           top: layout.y,
-          width: layout.width,
+          width: `${(layout.width / homepageLayoutCanvasWidth) * 100}%`,
           height: layout.height,
         }
       : {};
@@ -259,12 +281,14 @@ export default function HomePage() {
               View Reports
             </Link>
           </Button>
-          <Button asChild>
-            <Link href="/leads/new">
-              <Plus className="mr-2 h-4 w-4" />
-              New Lead
-            </Link>
-          </Button>
+          {hasPermission("Lead", "create") && (
+            <Button asChild>
+              <Link href="/leads/new">
+                <Plus className="mr-2 h-4 w-4" />
+                New Lead
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -359,7 +383,17 @@ export default function HomePage() {
         </div>}
 
         {showsWidget("pipeline-summary") && <div className={hasCustomLayout ? "absolute h-full" : ""} style={widgetStyle("pipeline-summary")}>
-          <PipelineSummary stages={pipelineStages} />
+          {isLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : pipelineStages.length > 0 ? (
+            <PipelineSummary stages={pipelineStages} />
+          ) : (
+            <Card>
+              <CardContent className="p-6 text-center text-muted-foreground text-sm">
+                No pipeline data
+              </CardContent>
+            </Card>
+          )}
         </div>}
       </div>}
 
@@ -393,7 +427,7 @@ export default function HomePage() {
                         <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${getPriorityColor(task.priority || "low")}`}>
                           {task.priority || "Low"}
                         </span>
-                        <p className="text-sm text-muted-foreground mt-1">{task.dueDate ? formatTimeAgo(task.dueDate) : "No due date"}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{task.dueDate ? formatDate(task.dueDate) : "No due date"}</p>
                       </div>
                     </div>
                   ))}
@@ -437,6 +471,40 @@ export default function HomePage() {
       </div>}
 
       </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Quick Actions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-3">
+            <Button variant="outline" className="h-20 flex-col gap-2" asChild>
+              <Link href="/leads/new">
+                <Users className="h-5 w-5" />
+                <span>Add Lead</span>
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" asChild>
+              <Link href="/site-visits">
+                <Calendar className="h-5 w-5" />
+                <span>Schedule Visit</span>
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" asChild>
+              <Link href="/quotations">
+                <FileText className="h-5 w-5" />
+                <span>Create Quote</span>
+              </Link>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col gap-2" asChild>
+              <Link href="/opportunities">
+                <TrendingUp className="h-5 w-5" />
+                <span>New Opportunity</span>
+              </Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

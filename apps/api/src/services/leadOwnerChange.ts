@@ -20,7 +20,7 @@ export async function changeLeadOwner(params: {
   if (!reason) throw new Error('Reason is required');
 
   const lead = await prisma.lead.findFirst({
-    where: { id: params.leadId, tenantId: params.changedBy.tenantId },
+    where: { id: params.leadId, ...(params.changedBy.isSuperAdmin ? {} : { tenantId: params.changedBy.tenantId }) },
     include: {
       owner: { select: { id: true, firstName: true, lastName: true } },
     },
@@ -36,7 +36,7 @@ export async function changeLeadOwner(params: {
   const newOwner = await prisma.user.findFirst({
     where: {
       id: params.newOwnerId,
-      tenantId: params.changedBy.tenantId,
+      tenantId: lead.tenantId,
       isActive: true,
       profileId: { not: null },
     },
@@ -52,6 +52,13 @@ export async function changeLeadOwner(params: {
   if (!(await EffectivePermissionService.hasPermission(newOwner.id, 'LEAD_READ'))) {
     throw new Error('New owner does not have Lead access');
   }
+
+  const changedByUser = await prisma.user.findUnique({
+    where: { id: params.changedBy.id },
+    select: { firstName: true, lastName: true },
+  });
+  const changedByName = changedByUser ? `${changedByUser.firstName} ${changedByUser.lastName}`.trim() : null;
+  const assignedTo = `${newOwner.firstName} ${newOwner.lastName}`.trim();
 
   return prisma.$transaction(async (tx) => {
     const updatedLead = await tx.lead.update({
@@ -96,9 +103,12 @@ export async function changeLeadOwner(params: {
         },
         newValues: {
           ownerId: newOwner.id,
-          ownerName: `${newOwner.firstName} ${newOwner.lastName}`,
+          ownerName: assignedTo,
           status: lead.status,
           reason,
+          assignmentSource: 'Manual',
+          ...(changedByName ? { changedByName } : {}),
+          assignedTo,
         },
       },
     });

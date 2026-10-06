@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { prisma } from '@dct-crm/db';
+import { getCRMDayBounds } from '@dct-crm/shared';
 import { canTransitionStatus } from './workflow';
 
 type Db = Prisma.TransactionClient | PrismaClient;
@@ -69,4 +70,96 @@ export async function getNextSiteVisitNumber(
 
 export async function getNextSiteVisitNumberDefault(tenantId: string): Promise<string> {
   return getNextSiteVisitNumber(prisma, tenantId);
+}
+
+export const AUTO_CANCEL_REASON =
+  'Automatically cancelled: scheduled visit date passed without completion.';
+
+/**
+ * Overdue Site Visit normalization (read-time, backend, deterministic).
+ *
+ * A visit with status SCHEDULED whose scheduled date is strictly before
+ * today in the CRM business timezone (Asia/Kolkata) and that was neither
+ * completed nor manually cancelled is auto-cancelled with a system reason.
+ * COMPLETED and already-CANCELLED visits are never touched. Mirrors the
+ * existing manual-cancel workflow for the linked lead (SITE_VISIT_SCHEDULED
+ * → PROSPECT when no other scheduled visit remains), with SYSTEM audit
+ * entries (userId null → displayed as "System").
+ */
+export async function normalizeOverdueSiteVisits(tenantId: string): Promise<void> {
+  const { start } = getCRMDayBounds();
+  const overdue = await prisma.siteVisit.findMany({
+    where: { tenantId, status: 'SCHEDULED', scheduledAt: { lt: start } },
+    select: {
+      id: true,
+      leadId: true,
+      scheduledAt: true,
+      lead: { select: { id: true, status: true } },
+    },
+  });
+  if (overdue.length === 0) return;
+
+  await prisma.$transaction(async (tx) => {
+    for (const sv of overdue) {
+      const cancelledAt = new Date();
+      const updated = await tx.siteVisit.updateMany({
+        where: { id: sv.id, status: 'SCHEDULED' },
+        data: {
+          status: 'CANCELLED',
+          cancellationReason: AUTO_CANCEL_REASON,
+          cancelledAt,
+          cancelledById: null,
+        },
+      });
+      if (updated.count === 0) continue; // another request already normalized it
+
+      if (sv.lead?.status === 'SITE_VISIT_SCHEDULED') {
+        const otherScheduled = await tx.siteVisit.count({
+          where: { tenantId, leadId: sv.leadId, status: 'SCHEDULED', id: { not: sv.id } },
+        });
+        if (otherScheduled === 0) {
+          await tx.lead.update({
+            where: { id: sv.leadId },
+            data: { status: 'PROSPECT' },
+          });
+          await tx.auditLog.create({
+            data: {
+              tenantId,
+              userId: null,
+              leadId: sv.leadId,
+              action: 'SITE_VISIT_CANCELLED',
+              objectType: 'Lead',
+              objectId: sv.leadId,
+              oldValues: { status: 'SITE_VISIT_SCHEDULED' },
+              newValues: {
+                status: 'PROSPECT',
+                siteVisitId: sv.id,
+                reason: AUTO_CANCEL_REASON,
+                source: 'SYSTEM',
+              },
+            },
+          });
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId,
+          userId: null,
+          leadId: sv.leadId,
+          action: 'SITE_VISIT_CANCELLED',
+          objectType: 'SiteVisit',
+          objectId: sv.id,
+          oldValues: { status: 'SCHEDULED', scheduledAt: sv.scheduledAt.toISOString() },
+          newValues: {
+            status: 'CANCELLED',
+            cancellationReason: AUTO_CANCEL_REASON,
+            cancelledAt: cancelledAt.toISOString(),
+            reason: AUTO_CANCEL_REASON,
+            source: 'SYSTEM',
+          },
+        },
+      });
+    }
+  });
 }

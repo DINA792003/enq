@@ -9,6 +9,7 @@ export interface Permission {
   delete?: boolean;
   viewAll?: boolean;
   modifyAll?: boolean;
+  assign?: boolean;
 }
 
 export const authorize = (objectName: string, requiredPermission: keyof Permission) => {

@@ -1,4 +1,5 @@
 "use client";
+  /* eslint-disable react-hooks/exhaustive-deps */
 
 import * as React from "react";
 import { Input } from "@/components/ui/input";

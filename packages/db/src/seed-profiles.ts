@@ -70,7 +70,6 @@ const PROFILE_PERMISSIONS: Record<string, string[]> = {
   Admin: ['FULL_SYSTEM_ACCESS'],
   'Sales Manager': [
     'LEAD_READ',
-    'LEAD_CREATE',
     'LEAD_UPDATE',
     'LEAD_ASSIGN',
     'LEAD_CONVERT',
@@ -93,8 +92,9 @@ const PROFILE_PERMISSIONS: Record<string, string[]> = {
   ],
   'Sales Executive': [
     'LEAD_READ',
-    'LEAD_CREATE',
     'LEAD_UPDATE',
+    'PROJECT_READ',
+    'UNIT_READ',
     'OPPORTUNITY_READ',
     'OPPORTUNITY_CREATE',
     'OPPORTUNITY_UPDATE',
@@ -108,24 +108,58 @@ const PROFILE_PERMISSIONS: Record<string, string[]> = {
   ],
   Sales: [
     'LEAD_READ',
-    'LEAD_CREATE',
     'LEAD_UPDATE',
+    'PROJECT_READ',
+    'UNIT_READ',
+    'SITE_VISIT_READ',
+    'SITE_VISIT_CREATE',
+    'SITE_VISIT_UPDATE',
+    'ACTIVITY_READ',
+    'ACTIVITY_CREATE',
+    'ACTIVITY_UPDATE',
+    'FOLLOW_UP_READ',
+    'FOLLOW_UP_CREATE',
+    'FOLLOW_UP_UPDATE',
+    'AUDIT_READ',
+    'AUDIT_CREATE',
+    'AUDIT_UPDATE',
     'OPPORTUNITY_READ',
     'OPPORTUNITY_CREATE',
     'OPPORTUNITY_UPDATE',
-    'SITE_VISIT_READ',
-    'SITE_VISIT_UPDATE',
-    'TASK_READ',
-    'TASK_CREATE',
-    'TASK_UPDATE',
-    'REPORT_VIEW',
+    'QUOTATION_READ',
+    'QUOTATION_CREATE',
+    'QUOTATION_UPDATE',
+    'BOOKING_READ',
+    'BOOKING_CREATE',
+    'BOOKING_UPDATE',
+    'PAYMENT_READ',
+    'PAYMENT_CREATE',
+    'PAYMENT_UPDATE',
     'DASHBOARD_READ',
+    'NOTIFICATION_READ',
+    'NOTIFICATION_CREATE',
+    'NOTIFICATION_UPDATE',
   ],
   Presales: [
     'LEAD_READ',
-    'TASK_READ',
-    'TASK_CREATE',
-    'TASK_UPDATE',
+    'LEAD_CREATE',
+    'LEAD_UPDATE',
+    'SITE_VISIT_READ',
+    'SITE_VISIT_CREATE',
+    'SITE_VISIT_UPDATE',
+    'ACTIVITY_READ',
+    'ACTIVITY_CREATE',
+    'ACTIVITY_UPDATE',
+    'FOLLOW_UP_READ',
+    'FOLLOW_UP_CREATE',
+    'FOLLOW_UP_UPDATE',
+    'AUDIT_READ',
+    'AUDIT_CREATE',
+    'AUDIT_UPDATE',
+    'DASHBOARD_READ',
+    'NOTIFICATION_READ',
+    'NOTIFICATION_CREATE',
+    'NOTIFICATION_UPDATE',
   ],
   Finance: [
     'PAYMENT_READ',
@@ -142,15 +176,28 @@ const PROFILE_PERMISSIONS: Record<string, string[]> = {
   ],
   SVC: [
     'LEAD_READ',
+    'LEAD_UPDATE',
+    'PROJECT_READ',
     'SITE_VISIT_READ',
     'SITE_VISIT_CREATE',
     'SITE_VISIT_UPDATE',
-    'TASK_READ',
-    'TASK_CREATE',
-    'TASK_UPDATE',
+    'ACTIVITY_READ',
+    'ACTIVITY_CREATE',
+    'ACTIVITY_UPDATE',
+    'FOLLOW_UP_READ',
+    'FOLLOW_UP_CREATE',
+    'FOLLOW_UP_UPDATE',
+    'AUDIT_READ',
+    'AUDIT_CREATE',
+    'AUDIT_UPDATE',
     'DASHBOARD_READ',
+    'NOTIFICATION_READ',
+    'NOTIFICATION_CREATE',
+    'NOTIFICATION_UPDATE',
   ],
   CRM: [
+    'LEAD_READ',
+    'SITE_VISIT_READ',
     'OPPORTUNITY_READ',
     'OPPORTUNITY_CREATE',
     'OPPORTUNITY_UPDATE',
@@ -160,13 +207,17 @@ const PROFILE_PERMISSIONS: Record<string, string[]> = {
     'BOOKING_READ',
     'BOOKING_CREATE',
     'BOOKING_UPDATE',
+    'PAYMENT_READ',
+    'PROJECT_READ',
+    'TASK_READ',
     'DASHBOARD_READ',
   ],
   Manager: [
     'LEAD_READ',
-    'LEAD_CREATE',
     'LEAD_UPDATE',
     'LEAD_ASSIGN',
+    'PROJECT_READ',
+    'UNIT_READ',
     'OPPORTUNITY_READ',
     'OPPORTUNITY_CREATE',
     'OPPORTUNITY_UPDATE',
@@ -257,6 +308,8 @@ async function main() {
       : permissionName.split('_')[0];
     await prisma.permission.upsert({
       where: { name: permissionName },
+      // Keep module refreshed on re-run (pre-merge behavior); label/action
+      // stay untouched for rows that already exist.
       update: { module },
       create: {
         name: permissionName,
@@ -288,25 +341,36 @@ async function main() {
     const objectPermissions: Record<string, Record<string, Record<string, boolean>>> = {
       Admin: Object.fromEntries(objectNames.map((objectName) => [objectName, { create: true, read: true, edit: true, delete: true, viewAll: true, modifyAll: true }])),
       Presales: {
-        Lead: permissions(false, true, false),
-        Task: permissions(true, true, true),
+        Lead: permissions(true, true, true),
+        SiteVisit: permissions(true, true, true),
+        Activity: permissions(true, true, true),
+        FollowUp: permissions(true, true, true),
       },
       SVC: {
         Lead: permissions(false, true, false),
         SiteVisit: permissions(true, true, true),
-        Task: permissions(true, true, true),
+        Activity: permissions(true, true, true),
+        FollowUp: permissions(true, true, true),
       },
       Sales: {
-        Lead: permissions(true, true, true),
+        Lead: permissions(false, true, true),
         SiteVisit: permissions(true, true, true),
-        Opportunity: permissions(true, true, true),
-        Quotation: permissions(true, true, true),
-        Task: permissions(true, true, true),
-      },
-      CRM: {
+        Activity: permissions(true, true, true),
+        FollowUp: permissions(true, true, true),
         Opportunity: permissions(true, true, true),
         Quotation: permissions(true, true, true),
         Booking: permissions(true, true, true),
+        Payment: permissions(true, true, true),
+      },
+      CRM: {
+        Lead: permissions(false, true, false),
+        SiteVisit: permissions(false, true, false),
+        Opportunity: permissions(true, true, true),
+        Quotation: permissions(true, true, true),
+        Booking: permissions(true, true, true),
+        Payment: permissions(false, true, false),
+        Project: permissions(false, true, false),
+        Task: permissions(false, true, false),
       },
       Finance: {
         Booking: permissions(false, true, true),
@@ -314,7 +378,7 @@ async function main() {
         Report: permissions(false, true, false),
       },
       Manager: {
-        Lead: permissions(true, true, true),
+        Lead: permissions(false, true, true),
         Opportunity: permissions(true, true, true),
         SiteVisit: permissions(false, true, true),
         Task: permissions(true, true, true),
@@ -406,33 +470,6 @@ async function main() {
       }
     }
 
-    for (const pool of ['PRESALES', 'SVC', 'SALES'] as const) {
-      const profileName = pool === 'PRESALES' ? 'Presales' : pool === 'SVC' ? 'SVC' : 'Sales';
-      const config = await prisma.roundRobinConfig.upsert({
-        where: { tenantId_poolType: { tenantId: tenant.id, poolType: pool } },
-        update: { isActive: true, profileName },
-        create: {
-          tenantId: tenant.id,
-          poolType: pool,
-          name: `${profileName} Test Round Robin`,
-          description: `Seeded ${profileName} test assignment pool`,
-          profileName,
-          isActive: true,
-        },
-      });
-      void config;
-      for (let index = 1; index <= 3; index += 1) {
-        const email = `${profileName.toLowerCase()}.test${index}@dctcrm.com`;
-        const user = seededUsers.get(email);
-        if (!user) throw new Error(`Missing Round Robin test user: ${email}`);
-        await prisma.roundRobinMember.upsert({
-          where: { tenantId_userId_poolType: { tenantId: tenant.id, userId: user.id, poolType: pool } },
-          update: { isActive: true },
-          create: { tenantId: tenant.id, userId: user.id, poolType: pool, isActive: true },
-        });
-      }
-    }
-
     console.log(`Seeded ${seededUsers.size} deterministic test users with password ${testPassword}`);
     }
 
@@ -454,6 +491,42 @@ async function main() {
     }
 
     console.log(`Assigned ${validIds.length} permissions to ${profileName}`);
+  }
+
+  const matrixProfileNames = ['Presales', 'SVC', 'Sales', 'CRM'];
+  const matrixRoleIds = new Map<string, string>();
+  for (const profileName of matrixProfileNames) {
+    const role = await prisma.role.upsert({
+      where: { tenantId_name: { tenantId: tenant.id, name: `Test ${profileName}` } },
+      update: {},
+      create: {
+        tenantId: tenant.id,
+        name: `Test ${profileName}`,
+        description: `Seeded test role for ${profileName}`,
+        isSystem: false,
+      },
+      select: { id: true },
+    });
+    matrixRoleIds.set(profileName, role.id);
+  }
+
+  const matrixUsers = await prisma.user.findMany({
+    where: { tenantId: tenant.id, profile: { name: { in: matrixProfileNames } } },
+    select: { id: true, email: true, profile: { select: { name: true } } },
+    orderBy: { email: 'asc' },
+  });
+
+  for (const user of matrixUsers) {
+    const profileName = user.profile?.name;
+    const targetRoleId = profileName ? matrixRoleIds.get(profileName) : undefined;
+    if (!profileName || !targetRoleId) continue;
+    await prisma.userRole.deleteMany({ where: { userId: user.id, roleId: { not: targetRoleId } } });
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: user.id, roleId: targetRoleId } },
+      update: {},
+      create: { userId: user.id, roleId: targetRoleId },
+    });
+    console.log(`Reconciled role: ${user.email} -> Test ${profileName}`);
   }
 
   const leftover = await prisma.permission.deleteMany({

@@ -1,31 +1,123 @@
 import { Router, Response } from 'express';
 import { prisma } from '@dct-crm/db';
-import { leadCreateSchema, leadSchema, normalizePhone, PHONE_DUPLICATE_ERROR } from '@dct-crm/shared';
+import { leadCreateSchema, leadUpdateSchema, normalizePhone, PHONE_DUPLICATE_ERROR } from '@dct-crm/shared';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { authorize } from '../middleware/authorization';
-import { canTransitionStatus, getAllowedStatuses, isValidStatus } from '../services/workflow';
-import {
-  getNextSVCUser,
-  getNextSalesUser,
-  getNextPresalesUser,
-  getNextCRMUser,
-  getAdminFallback,
-  roundRobinHandoffReason,
-} from '../services/roundRobin';
-import type { RoundRobinResult } from '../services/roundRobin';
+import { canTransitionStatus, isValidStatus } from '../services/workflow';
 import { createOwnerHistory, getOwnerHistory } from '../services/ownerHistory';
 import {
   canAccessLead,
   getLeadRecordScope,
   leadScopeClause,
 } from '../services/recordAccess';
-import { getNextSiteVisitNumber } from '../services/leadWorkflowExtras';
+import { getNextSiteVisitNumber, normalizeOverdueSiteVisits } from '../services/leadWorkflowExtras';
 import { changeLeadOwner, getEligibleLeadOwners } from '../services/leadOwnerChange';
+import {
+  findApplicableRRQueue,
+  hasLeadAssignmentRelevantChanges,
+  isLeadEligibleForAutoAssignment,
+  RoundRobinAssignmentService,
+} from '../services/rrQueue';
 import { z } from 'zod';
 
 const router = Router();
 
 router.use(authenticate);
+
+/**
+ * Lead lookup tenant scope. Matches the existing GET / list rule: superadmin
+ * sees and acts on every tenant's leads (recordAccess/authorization already
+ * grant superadmin ALL-scope), while every other user stays tenant-scoped.
+ */
+function leadIdScope(req: AuthRequest): { tenantId?: string } {
+  return req.user!.isSuperAdmin ? {} : { tenantId: req.tenantId! };
+}
+
+/**
+ * Human-facing audit display: keys whose values are user IDs. The audit
+ * history endpoints resolve them to display names so the UI never shows raw
+ * internal user IDs. IDs are resolved in a single batched query (no N+1).
+ */
+const AUDIT_USER_KEYS = new Set([
+  'ownerId',
+  'previousOwnerId',
+  'newOwnerId',
+  'changedById',
+  'createdById',
+  'updatedById',
+  'completedById',
+  'cancelledById',
+  'assignedById',
+  'performedById',
+  'userId',
+  'changedBy',
+  'createdBy',
+  'updatedBy',
+  'assignedBy',
+  'performedBy',
+]);
+
+function auditDisplayValues(
+  values: Record<string, unknown> | null | undefined,
+  nameById: Map<string, string>,
+): Record<string, unknown> | null | undefined {
+  if (!values || typeof values !== 'object') return values;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (AUDIT_USER_KEYS.has(key)) {
+      const siblingNameKey = key.endsWith('Id') ? `${key.slice(0, -2)}Name` : null;
+      const hasSiblingName =
+        !!siblingNameKey &&
+        typeof (values as Record<string, unknown>)[siblingNameKey] === 'string' &&
+        String((values as Record<string, unknown>)[siblingNameKey]).length > 0;
+      if (hasSiblingName) {
+        // Explicit *Name sibling present: keep the pair (the UI renders the
+        // name row and skips the raw id — see getAuditChanges).
+        out[key] = value;
+        continue;
+      }
+      if (typeof value === 'string' && nameById.has(value)) {
+        // No name sibling: resolve the id to a display name so nothing raw
+        // is ever surfaced by consumers.
+        out[key] = nameById.get(value);
+        continue;
+      }
+      if (value === null && key.endsWith('ById')) {
+        out[key] = 'System';
+        continue;
+      }
+    }
+    out[key] = value;
+  }
+  return out;
+}
+
+async function enrichAuditLogs<T extends { oldValues?: unknown; newValues?: unknown }>(logs: T[]) {
+  const ids = new Set<string>();
+  for (const log of logs) {
+    for (const values of [log.oldValues, log.newValues]) {
+      if (!values || typeof values !== 'object') continue;
+      for (const [key, value] of Object.entries(values as Record<string, unknown>)) {
+        if (AUDIT_USER_KEYS.has(key) && typeof value === 'string' && value.startsWith('c')) {
+          ids.add(value);
+        }
+      }
+    }
+  }
+  const users = ids.size
+    ? await prisma.user.findMany({
+        where: { id: { in: [...ids] } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const nameById = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
+
+  return logs.map((log) => ({
+    ...log,
+    oldValues: auditDisplayValues(log.oldValues as Record<string, unknown> | null | undefined, nameById),
+    newValues: auditDisplayValues(log.newValues as Record<string, unknown> | null | undefined, nameById),
+  }));
+}
 
 async function getNextLeadNumber(tenantId: string): Promise<string> {
   const sequence = await prisma.$transaction(async (tx) => {
@@ -164,7 +256,12 @@ router.get('/', authorize('Lead', 'read'), async (req: AuthRequest, res: Respons
     if (scopeClause) {
       where.AND = Array.isArray(where.AND) ? [...where.AND, scopeClause] : [scopeClause];
     }
-    if (status && status !== 'All Statuses') where.status = status;
+    if (status && status !== 'All Statuses') {
+      if (!isValidStatus(String(status))) {
+        return res.status(400).json({ success: false, error: 'Invalid status filter' });
+      }
+      where.status = String(status);
+    }
     if (source) where.source = source;
     if (ownerId) where.ownerId = ownerId;
     if (from || to) {
@@ -200,15 +297,6 @@ router.get('/', authorize('Lead', 'read'), async (req: AuthRequest, res: Respons
       where.AND = Array.isArray(where.AND) ? [...where.AND, searchClause] : [searchClause];
     }
 
-    const profileName = req.user!.profileName || 'Admin';
-
-    if (profileName !== 'Admin' && profileName !== 'Manager' && profileName !== 'CRM Admin') {
-      const allowedStatuses = getAllowedStatuses(profileName);
-      if (allowedStatuses.length > 0) {
-        where.status = { in: allowedStatuses };
-      }
-    }
-
     const [leads, total] = await Promise.all([
       prisma.lead.findMany({
         where,
@@ -242,8 +330,9 @@ router.get('/', authorize('Lead', 'read'), async (req: AuthRequest, res: Respons
 
 router.get('/:id', authorize('Lead', 'read'), async (req: AuthRequest, res: Response) => {
   try {
+    await normalizeOverdueSiteVisits(req.user!.tenantId);
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
       include: {
         owner: { select: { id: true, firstName: true, lastName: true, email: true } },
         creator: { select: { id: true, firstName: true, lastName: true } },
@@ -290,11 +379,11 @@ router.get('/:id', authorize('Lead', 'read'), async (req: AuthRequest, res: Resp
       return res.status(403).json({ success: false, error: 'You do not have access to this lead' });
     }
 
-    const ownerHistory = await getOwnerHistory(req.tenantId!, req.params.id);
+    const ownerHistory = await getOwnerHistory(lead.tenantId, req.params.id);
 
     const lastAudit = await prisma.auditLog.findFirst({
       where: {
-        tenantId: req.tenantId!,
+        tenantId: lead.tenantId,
         OR: [{ leadId: lead.id }, { objectType: 'Lead', objectId: lead.id }],
       },
       orderBy: { createdAt: 'desc' },
@@ -317,7 +406,15 @@ router.get('/:id', authorize('Lead', 'read'), async (req: AuthRequest, res: Resp
           action: 'CREATE',
         };
 
-    res.json({ success: true, data: { ...lead, ownerHistory, lastModified } });
+    res.json({
+      success: true,
+      data: {
+        ...lead,
+        auditLogs: await enrichAuditLogs(lead.auditLogs),
+        ownerHistory,
+        lastModified,
+      },
+    });
   } catch (error) {
     console.error('Get lead error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch lead' });
@@ -326,17 +423,17 @@ router.get('/:id', authorize('Lead', 'read'), async (req: AuthRequest, res: Resp
 
 router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: AuthRequest, res: Response) => {
   try {
-    const { tenantId, id: userId } = req.user!;
+    const { tenantId: callerTenantId, id: userId } = req.user!;
     const data = convertLeadSchema.parse(req.body);
     const result = await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`LEAD_CONVERSION:${tenantId}:${req.params.id}`}, 0))`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`LEAD_CONVERSION:${callerTenantId}:${req.params.id}`}, 0))`;
 
       const lead = await tx.lead.findFirst({
-        where: { id: req.params.id, tenantId },
+        where: { id: req.params.id, ...leadIdScope(req) },
         include: {
           owner: { select: { id: true, firstName: true, lastName: true } },
           siteVisits: {
-            where: { tenantId, status: 'COMPLETED' },
+            where: { status: 'COMPLETED' },
             orderBy: [{ completedAt: 'desc' }, { updatedAt: 'desc' }],
             take: 1,
           },
@@ -344,6 +441,7 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
         },
       });
       if (!lead) throw new Error('LEAD_NOT_FOUND');
+      const tenantId = lead.tenantId;
       if (!(await canAccessLead(req.user!, lead))) throw new Error('LEAD_ACCESS_DENIED');
       if (lead.status !== 'SITE_VISIT_HAPPENED') throw new Error('LEAD_NOT_READY');
       // Conversion performs an automatic SITE_VISIT_HAPPENED -> BOOKED transition:
@@ -362,7 +460,10 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
       const completedSiteVisit = lead.siteVisits[0];
       if (!completedSiteVisit) throw new Error('COMPLETED_SITE_VISIT_REQUIRED');
 
-      const projectId = data.projectId || completedSiteVisit.projectId || lead.projectId || undefined;
+      if (data.projectId && completedSiteVisit.projectId && data.projectId !== completedSiteVisit.projectId) {
+        throw new Error('PROJECT_MISMATCH');
+      }
+      const projectId = completedSiteVisit.projectId || data.projectId || lead.projectId || undefined;
       if (!projectId) throw new Error('PROJECT_REQUIRED');
       const project = await tx.project.findFirst({ where: { id: projectId, tenantId, isActive: true }, select: { id: true } });
       if (!project) throw new Error('INVALID_PROJECT');
@@ -375,16 +476,7 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
         if (!unit) throw new Error('INVALID_UNIT');
       }
 
-      // Step 11: Resolve CRM Round Robin owner via the existing Round Robin service
-      // (getNextCRMUser falls back to a same-tenant active Admin when the pool is empty)
-      let rrUser: RoundRobinResult | null = await getNextCRMUser(tenantId, tx);
-      const forbiddenOwnerProfiles = ['Sales', 'Presales', 'SVC'];
-      if (rrUser && !rrUser.isFallback && forbiddenOwnerProfiles.includes(rrUser.profileName || '')) {
-        rrUser = await getAdminFallback(tenantId, 'CRM', tx);
-      }
-      if (!rrUser) throw new Error('CONVERSION_OWNER_UNAVAILABLE');
-      const ownerFallback = Boolean(rrUser.isFallback);
-      const assignmentReason = roundRobinHandoffReason('CRM', ownerFallback);
+      const opportunityOwnerId = lead.ownerId || userId;
 
       // Step 13: Generate Opportunity Number
       const opportunityNumber = await getNextOpportunityNumber(tx, tenantId);
@@ -394,7 +486,7 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
           opportunityNumber,
           name: data.name || `${lead.company} Opportunity`,
           leadId: lead.id,
-          ownerId: rrUser.id,
+          ownerId: opportunityOwnerId,
           creatorId: userId,
           projectId,
           unitId: data.unitId,
@@ -436,10 +528,7 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
             leadNumber: lead.leadNumber,
             opportunityId: opportunity.id,
             opportunityNumber,
-            ownerId: rrUser.id,
-            ownerName: `${rrUser.firstName} ${rrUser.lastName}`,
-            assignment: ownerFallback ? 'ADMIN_FALLBACK' : 'CRM_ROUND_ROBIN',
-            assignmentReason,
+            ownerId: opportunityOwnerId,
             siteVisitId: completedSiteVisit.id,
             projectId,
             unitId: data.unitId || null,
@@ -447,7 +536,7 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
         },
       });
 
-      return { opportunity, lead: convertedLead, duplicate: false, ownerFallback, assignmentReason };
+      return { opportunity, lead: convertedLead, duplicate: false };
     });
     return res.status(result.duplicate ? 200 : 201).json({ success: true, data: result });
   } catch (error: any) {
@@ -462,8 +551,8 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
       COMPLETED_SITE_VISIT_REQUIRED: [400, 'A completed Site Visit is required'],
       PROJECT_REQUIRED: [400, 'Project is required'],
       INVALID_PROJECT: [400, 'Invalid project'],
+      PROJECT_MISMATCH: [400, 'Opportunity project must match the completed Site Visit project'],
       INVALID_UNIT: [400, 'Unit is unavailable or does not belong to the project'],
-      CONVERSION_OWNER_UNAVAILABLE: [409, 'No eligible CRM Round Robin member or same-tenant Admin available to own this Opportunity'],
     };
     const mapped = errors[error.message];
     if (mapped) return res.status(mapped[0]).json({ success: false, error: mapped[1] });
@@ -474,10 +563,6 @@ router.post('/:id/convert', authorize('Opportunity', 'create'), async (req: Auth
 
 router.post('/', authorize('Lead', 'create'), async (req: AuthRequest, res: Response) => {
   try {
-    if (!req.user!.isSuperAdmin && !['Admin', 'Presales'].includes(req.user!.profileName || '')) {
-      return res.status(403).json({ success: false, error: 'Only Admin and Presales users can create leads' });
-    }
-
     const data = leadCreateSchema.parse(req.body);
 
     if (await findPhoneConflict(req.tenantId!, data.phone)) {
@@ -486,18 +571,9 @@ router.post('/', authorize('Lead', 'create'), async (req: AuthRequest, res: Resp
 
     const leadNumber = await getNextLeadNumber(req.tenantId!);
 
-    let ownerId = req.user!.id;
-    const useDefaultPresales = true;
+    const ownerId = req.user!.id;
 
-    const lead = await prisma.$transaction(async (tx) => {
-      let presalesUser: RoundRobinResult | null = null;
-      if (useDefaultPresales) {
-        presalesUser = await getNextPresalesUser(req.tenantId!, tx);
-        if (presalesUser) {
-          ownerId = presalesUser.id;
-        }
-      }
-
+    const transactionResult = await prisma.$transaction(async (tx) => {
       const created = await tx.lead.create({
         data: {
           tenantId: req.tenantId!,
@@ -542,12 +618,10 @@ router.post('/', authorize('Lead', 'create'), async (req: AuthRequest, res: Resp
           previousOwnerId: null,
           newOwnerId: ownerId,
           previousProfile: null,
-          newProfile: presalesUser?.profileName || req.user!.profileName || null,
+          newProfile: req.user!.profileName || null,
           previousStatus: null,
           newStatus: 'NEW',
-          handoffReason: presalesUser
-            ? roundRobinHandoffReason('PRESALES', presalesUser.isFallback)
-            : 'Lead Created',
+          handoffReason: 'Lead Created',
           changedById: req.user!.id,
         },
         tx,
@@ -561,14 +635,41 @@ router.post('/', authorize('Lead', 'create'), async (req: AuthRequest, res: Resp
           action: 'CREATE',
           objectType: 'Lead',
           objectId: created.id,
-          newValues: data,
+          newValues: {
+            ...data,
+            assignedTo: created.owner ? `${created.owner.firstName} ${created.owner.lastName}` : null,
+          },
         },
       });
 
-      return created;
-    });
+      const leadForAssignment = {
+        ...created,
+        projectId: created.projectId || data.projectId || null,
+        projectName: created.project?.name || null,
+        status: 'NEW',
+        source: data.source,
+        leadQueueing: true,
+        leadAssigned: false,
+      };
 
-    res.status(201).json({ success: true, data: lead });
+      const rrQueue = isLeadEligibleForAutoAssignment(leadForAssignment, { isNewLead: true })
+        ? await findApplicableRRQueue(req.tenantId!, {
+            projectId: leadForAssignment.projectId,
+            projectName: leadForAssignment.projectName,
+            status: 'NEW',
+            source: String(data.source),
+          }, tx)
+        : null;
+
+      const assignment = rrQueue
+        ? await RoundRobinAssignmentService.assignLeadInTransaction(tx, rrQueue.id, created.id, req.tenantId!)
+        : null;
+      return { created, assignment };
+    });
+    const assignedLead = transactionResult.assignment
+      ? await prisma.lead.findUnique({ where: { id: transactionResult.created.id }, include: { owner: { select: { id: true, firstName: true, lastName: true } }, project: { select: { id: true, name: true } } } })
+      : transactionResult.created;
+    res.status(201).json({ success: true, data: assignedLead || transactionResult.created });
   } catch (error: any) {
     if (error.name === 'ZodError') {
       return res.status(400).json({ success: false, error: error.errors[0].message });
@@ -584,7 +685,7 @@ router.post('/', authorize('Lead', 'create'), async (req: AuthRequest, res: Resp
 router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Response) => {
   try {
     const existingLead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
     });
 
     if (!existingLead) {
@@ -602,7 +703,7 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
         ? bodyData.reason.trim()
         : undefined;
     delete bodyData.reason;
-    const data = leadSchema.partial().parse(bodyData);
+    const data = leadUpdateSchema.parse(bodyData);
 
     if (data.status && !isValidStatus(data.status)) {
       return res.status(400).json({ success: false, error: `Invalid status: ${data.status}` });
@@ -610,7 +711,7 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
 
     if (data.phone !== undefined && data.phone !== '') {
       const phoneToCheck = normalizePhone(data.phone);
-      if (await findPhoneConflict(req.tenantId!, phoneToCheck, req.params.id)) {
+      if (await findPhoneConflict(existingLead.tenantId, phoneToCheck, req.params.id)) {
         return res.status(409).json({ success: false, error: PHONE_DUPLICATE_ERROR });
       }
       data.phone = phoneToCheck;
@@ -633,7 +734,7 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
 
     if (Object.keys(updateData).length === 0) {
       const unchanged = await prisma.lead.findFirst({
-        where: { id: req.params.id, tenantId: req.tenantId! },
+        where: { id: req.params.id, ...leadIdScope(req) },
         include: {
           owner: { select: { id: true, firstName: true, lastName: true } },
           project: { select: { id: true, name: true } },
@@ -645,6 +746,7 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
     const ownerChanged =
       'ownerId' in updateData &&
       normalizeDiffValue(updateData.ownerId) !== normalizeDiffValue(existingLead.ownerId);
+    const shouldReassign = hasLeadAssignmentRelevantChanges(updateData);
 
     const result = await prisma.$transaction(async (tx) => {
       const lead = await tx.lead.update({
@@ -660,7 +762,7 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
 
       await tx.auditLog.create({
         data: {
-          tenantId: req.tenantId!,
+          tenantId: existingLead.tenantId,
           userId: req.user!.id,
           leadId: lead.id,
           action: ownerChanged && Object.keys(newValues).length === 1 ? 'OWNER_CHANGED' : 'UPDATE',
@@ -682,7 +784,7 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
 
         await createOwnerHistory(
           {
-            tenantId: req.tenantId!,
+            tenantId: existingLead.tenantId,
             leadId: lead.id,
             previousOwnerId: existingLead.ownerId,
             newOwnerId: newOwnerId as string | null,
@@ -697,7 +799,34 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
         );
       }
 
-      return lead;
+      const leadForAssignment = {
+        ...lead,
+        projectId: Object.prototype.hasOwnProperty.call(updateData, 'projectId')
+          ? updateData.projectId
+          : lead.projectId || existingLead.projectId || null,
+        projectName: lead.project?.name || (Object.prototype.hasOwnProperty.call(updateData, 'projectId') ? null : existingLead.projectId) || null,
+        status: updateData.status ?? lead.status,
+        source: updateData.source ?? lead.source,
+        leadQueueing: shouldReassign,
+        leadAssigned: !shouldReassign,
+        leadReassign: shouldReassign,
+      };
+
+      let assignment: any = null;
+      if (shouldReassign && isLeadEligibleForAutoAssignment(leadForAssignment, { isNewLead: false })) {
+        const queue = await findApplicableRRQueue(existingLead.tenantId, {
+          projectId: leadForAssignment.projectId,
+          projectName: leadForAssignment.projectName,
+          status: String(leadForAssignment.status),
+          source: String(leadForAssignment.source),
+          priority: String(leadForAssignment.rating || ''),
+        }, tx);
+        if (queue) {
+          assignment = await RoundRobinAssignmentService.assignLeadInTransaction(tx, queue.id, lead.id, existingLead.tenantId);
+        }
+      }
+
+      return { ...lead, assignment };
     });
 
     res.json({ success: true, data: result });
@@ -708,6 +837,12 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
     if (isPhoneUniqueViolation(error)) {
       return res.status(409).json({ success: false, error: PHONE_DUPLICATE_ERROR });
     }
+    if (error?.message === 'NO_ELIGIBLE_USER') {
+      return res.status(409).json({
+        success: false,
+        error: 'No eligible RR queue member or fallback owner is available for this lead.',
+      });
+    }
     console.error('Update lead error:', error);
     res.status(500).json({ success: false, error: 'Failed to update lead' });
   }
@@ -716,7 +851,7 @@ router.put('/:id', authorize('Lead', 'edit'), async (req: AuthRequest, res: Resp
 router.delete('/:id', authorize('Lead', 'delete'), async (req: AuthRequest, res: Response) => {
   try {
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
     });
 
     if (!lead) {
@@ -729,7 +864,7 @@ router.delete('/:id', authorize('Lead', 'delete'), async (req: AuthRequest, res:
 
     await prisma.auditLog.create({
       data: {
-        tenantId: req.tenantId!,
+        tenantId: lead.tenantId,
         userId: req.user!.id,
         action: 'DELETE',
         objectType: 'Lead',
@@ -818,7 +953,7 @@ router.post('/:id/push-to-svc', authorize('Lead', 'edit'), async (req: AuthReque
     }
 
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
       include: { owner: { select: { id: true, firstName: true, lastName: true } } },
     });
 
@@ -842,91 +977,29 @@ router.post('/:id/push-to-svc', authorize('Lead', 'edit'), async (req: AuthReque
       }
     }
 
-    const previousOwner = lead.owner;
-    const previousProfile = profileName;
-
     const result = await prisma.$transaction(async (tx) => {
-      const svcUser = await getNextSVCUser(req.tenantId!, tx);
-      if (!svcUser) {
-        throw new Error('No active SVC Round Robin members configured');
-      }
-
-      const svcUserProfile = await tx.user.findUnique({
-        where: { id: svcUser.id },
-        select: { profile: { select: { name: true } } },
-      });
-
       const updatedLead = await tx.lead.update({
         where: { id: req.params.id },
-        data: {
-          status: 'PROSPECT',
-          ownerId: svcUser.id,
-        },
+        data: { status: 'PROSPECT' },
         include: {
           owner: { select: { id: true, firstName: true, lastName: true } },
         },
       });
 
-      await createOwnerHistory(
-        {
-          tenantId: req.tenantId!,
-          leadId: lead.id,
-          previousOwnerId: lead.ownerId,
-          newOwnerId: svcUser.id,
-          previousProfile,
-          newProfile: svcUser.profileName || svcUserProfile?.profile?.name || null,
-          previousStatus: 'INCOMING',
-          newStatus: 'PROSPECT',
-          handoffReason: roundRobinHandoffReason('SVC', svcUser.isFallback),
-          changedById: req.user!.id,
-        },
-        tx,
-      );
-
       await tx.auditLog.create({
         data: {
-          tenantId: req.tenantId!,
+          tenantId: lead.tenantId,
           userId: req.user!.id,
           leadId: lead.id,
           action: 'PUSH_TO_SVC',
           objectType: 'Lead',
           objectId: lead.id,
-          oldValues: { status: 'INCOMING', ownerId: lead.ownerId, ownerName: previousOwner ? `${previousOwner.firstName} ${previousOwner.lastName}` : null },
+          oldValues: { status: 'INCOMING', ownerId: lead.ownerId },
           newValues: {
             status: 'PROSPECT',
-            ownerId: svcUser.id,
-            ownerName: `${svcUser.firstName} ${svcUser.lastName}`,
             note: reason,
             reason,
-            roundRobin: roundRobinHandoffReason('SVC', svcUser.isFallback),
           },
-        },
-      });
-
-      if (lead.ownerId !== svcUser.id) {
-        await tx.auditLog.create({
-          data: {
-            tenantId: req.tenantId!,
-            userId: req.user!.id,
-            leadId: lead.id,
-            action: 'OWNER_CHANGED',
-            objectType: 'Lead',
-            objectId: lead.id,
-            oldValues: { ownerId: lead.ownerId, ownerName: previousOwner ? `${previousOwner.firstName} ${previousOwner.lastName}` : null },
-            newValues: { ownerId: svcUser.id, ownerName: `${svcUser.firstName} ${svcUser.lastName}`, reason },
-          },
-        });
-      }
-
-      await tx.notification.create({
-        data: {
-          tenantId: req.tenantId!,
-          userId: svcUser.id,
-          title: 'Lead Assigned to SVC',
-          message: `Lead ${lead.leadNumber} ${lead.firstName ? lead.firstName + ' ' : ''}${lead.lastName} has been assigned to you for site visit coordination.`,
-          type: 'LEAD_ASSIGNMENT',
-          referenceId: lead.id,
-          referenceType: 'Lead',
         },
       });
 
@@ -935,12 +1008,6 @@ router.post('/:id/push-to-svc', authorize('Lead', 'edit'), async (req: AuthReque
 
     res.json({ success: true, data: result });
   } catch (error: any) {
-    if (error?.message === 'No active SVC Round Robin members configured') {
-      return res.status(400).json({ success: false, error: error.message });
-    }
-    if (error?.message === 'Round Robin cursor is busy; please retry') {
-      return res.status(409).json({ success: false, error: error.message });
-    }
     console.error('Push to SVC error:', error);
     res.status(500).json({ success: false, error: 'Failed to push lead to SVC' });
   }
@@ -954,7 +1021,7 @@ router.post('/:id/move-to-recovery', authorize('Lead', 'edit'), async (req: Auth
     }
 
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
       include: { owner: { select: { id: true, firstName: true, lastName: true } } },
     });
 
@@ -987,7 +1054,7 @@ router.post('/:id/move-to-recovery', authorize('Lead', 'edit'), async (req: Auth
 
       await createOwnerHistory(
         {
-          tenantId: req.tenantId!,
+          tenantId: lead.tenantId,
           leadId: lead.id,
           previousOwnerId: lead.ownerId,
           newOwnerId: null,
@@ -1003,7 +1070,7 @@ router.post('/:id/move-to-recovery', authorize('Lead', 'edit'), async (req: Auth
 
       await tx.auditLog.create({
         data: {
-          tenantId: req.tenantId!,
+          tenantId: lead.tenantId,
           userId: req.user!.id,
           leadId: lead.id,
           action: 'MOVE_TO_RECOVERY',
@@ -1026,20 +1093,18 @@ router.post('/:id/move-to-recovery', authorize('Lead', 'edit'), async (req: Auth
 
 router.post('/:id/schedule-site-visit', authorize('Lead', 'edit'), async (req: AuthRequest, res: Response) => {
   try {
-    const { scheduledAt, notes, projectId } = req.body;
-
-    if (!projectId || !projectId.trim()) {
-      return res.status(400).json({ success: false, error: 'Project is required for site visit' });
+    const request = z.object({
+      projectId: z.string().trim().min(1, 'Project is required for site visit'),
+      notes: z.string().trim().min(1, 'Note/reason is required for site visit').max(2000),
+      scheduledAt: z.string().datetime('Visit date/time is required'),
+    }).safeParse(req.body);
+    if (!request.success) {
+      return res.status(400).json({ success: false, error: request.error.issues[0].message });
     }
-    if (!notes || !notes.trim()) {
-      return res.status(400).json({ success: false, error: 'Note/reason is required for site visit' });
-    }
-    if (!scheduledAt) {
-      return res.status(400).json({ success: false, error: 'Visit date/time is required' });
-    }
+    const { scheduledAt, notes, projectId } = request.data;
 
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
       include: { owner: { select: { id: true, firstName: true, lastName: true } } },
     });
 
@@ -1063,26 +1128,22 @@ router.post('/:id/schedule-site-visit', authorize('Lead', 'edit'), async (req: A
       }
     }
 
-    const previousOwner = lead.owner;
-
     const result = await prisma.$transaction(async (tx) => {
-      const salesUser = await getNextSalesUser(req.tenantId!, tx);
-      if (!salesUser) {
-        throw new Error('No active Sales Round Robin members configured');
+      const project = await tx.project.findFirst({
+        where: { id: projectId, tenantId: lead.tenantId, isActive: true },
+        select: { id: true },
+      });
+      if (!project) {
+        throw new Error('PROJECT_NOT_AVAILABLE');
       }
 
-      const salesUserProfile = await tx.user.findUnique({
-        where: { id: salesUser.id },
-        select: { profile: { select: { name: true } } },
-      });
-
-      const siteVisitNumber = await getNextSiteVisitNumber(tx, req.tenantId!);
+      const siteVisitNumber = await getNextSiteVisitNumber(tx, lead.tenantId);
       const siteVisit = await tx.siteVisit.create({
         data: {
-          tenantId: req.tenantId!,
+          tenantId: lead.tenantId,
           leadId: lead.id,
-          projectId: projectId || undefined,
-          assigneeId: salesUser.id,
+          projectId,
+          assigneeId: lead.ownerId || req.user!.id,
           creatorId: req.user!.id,
           siteVisitNumber,
           scheduledAt: new Date(scheduledAt),
@@ -1097,76 +1158,27 @@ router.post('/:id/schedule-site-visit', authorize('Lead', 'edit'), async (req: A
 
       const updatedLead = await tx.lead.update({
         where: { id: req.params.id },
-        data: {
-          status: 'SITE_VISIT_SCHEDULED',
-          ownerId: salesUser.id,
-        },
+        data: { status: 'SITE_VISIT_SCHEDULED' },
         include: {
           owner: { select: { id: true, firstName: true, lastName: true } },
         },
       });
 
-      await createOwnerHistory(
-        {
-          tenantId: req.tenantId!,
-          leadId: lead.id,
-          previousOwnerId: lead.ownerId,
-          newOwnerId: salesUser.id,
-          previousProfile: profileName,
-          newProfile: salesUser.profileName || salesUserProfile?.profile?.name || null,
-          previousStatus: 'PROSPECT',
-          newStatus: 'SITE_VISIT_SCHEDULED',
-          handoffReason: roundRobinHandoffReason('SALES', salesUser.isFallback),
-          changedById: req.user!.id,
-        },
-        tx,
-      );
-
       await tx.auditLog.create({
         data: {
-          tenantId: req.tenantId!,
+          tenantId: lead.tenantId,
           userId: req.user!.id,
           leadId: lead.id,
           action: 'SITE_VISIT_SCHEDULED',
           objectType: 'Lead',
           objectId: lead.id,
-          oldValues: { status: 'PROSPECT', ownerId: lead.ownerId, ownerName: previousOwner ? `${previousOwner.firstName} ${previousOwner.lastName}` : null },
+          oldValues: { status: 'PROSPECT', ownerId: lead.ownerId },
           newValues: {
             status: 'SITE_VISIT_SCHEDULED',
-            ownerId: salesUser.id,
-            ownerName: `${salesUser.firstName} ${salesUser.lastName}`,
             siteVisitId: siteVisit.id,
             note: notes,
             reason: notes,
-            roundRobin: roundRobinHandoffReason('SALES', salesUser.isFallback),
           },
-        },
-      });
-
-      if (lead.ownerId !== salesUser.id) {
-        await tx.auditLog.create({
-          data: {
-            tenantId: req.tenantId!,
-            userId: req.user!.id,
-            leadId: lead.id,
-            action: 'OWNER_CHANGED',
-            objectType: 'Lead',
-            objectId: lead.id,
-            oldValues: { ownerId: lead.ownerId, ownerName: previousOwner ? `${previousOwner.firstName} ${previousOwner.lastName}` : null },
-            newValues: { ownerId: salesUser.id, ownerName: `${salesUser.firstName} ${salesUser.lastName}`, reason: notes },
-          },
-        });
-      }
-
-      await tx.notification.create({
-        data: {
-          tenantId: req.tenantId!,
-          userId: salesUser.id,
-          title: 'Site Visit Scheduled',
-          message: `A site visit has been scheduled for lead ${lead.leadNumber} ${lead.firstName ? lead.firstName + ' ' : ''}${lead.lastName}. You are the assigned sales executive.`,
-          type: 'SITE_VISIT_ASSIGNED',
-          referenceId: lead.id,
-          referenceType: 'Lead',
         },
       });
 
@@ -1175,11 +1187,8 @@ router.post('/:id/schedule-site-visit', authorize('Lead', 'edit'), async (req: A
 
     res.json({ success: true, data: result });
   } catch (error: any) {
-    if (error?.message === 'No active Sales Round Robin members configured') {
-      return res.status(400).json({ success: false, error: error.message });
-    }
-    if (error?.message === 'Round Robin cursor is busy; please retry') {
-      return res.status(409).json({ success: false, error: error.message });
+    if (error?.message === 'PROJECT_NOT_AVAILABLE') {
+      return res.status(404).json({ success: false, error: 'Project not found' });
     }
     console.error('Schedule site visit error:', error);
     res.status(500).json({ success: false, error: 'Failed to schedule site visit' });
@@ -1199,7 +1208,7 @@ router.put('/:id/status', authorize('Lead', 'edit'), async (req: AuthRequest, re
     }
 
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
     });
 
     if (!lead) {
@@ -1232,7 +1241,7 @@ router.put('/:id/status', authorize('Lead', 'edit'), async (req: AuthRequest, re
 
     await prisma.auditLog.create({
       data: {
-        tenantId: req.tenantId!,
+        tenantId: lead.tenantId,
         userId: req.user!.id,
         leadId: lead.id,
         action: 'STATUS_CHANGE',
@@ -1250,7 +1259,7 @@ router.put('/:id/status', authorize('Lead', 'edit'), async (req: AuthRequest, re
   }
 });
 
-router.patch('/:id/owner', authorize('Lead', 'edit'), async (req: AuthRequest, res: Response) => {
+router.patch('/:id/owner', authorize('Lead', 'assign'), async (req: AuthRequest, res: Response) => {
   try {
     const { ownerId, reason } = req.body || {};
     const data = await changeLeadOwner({
@@ -1271,7 +1280,7 @@ router.patch('/:id/owner', authorize('Lead', 'edit'), async (req: AuthRequest, r
   }
 });
 
-router.put('/:id/assign', authorize('Lead', 'edit'), async (req: AuthRequest, res: Response) => {
+router.put('/:id/assign', authorize('Lead', 'assign'), async (req: AuthRequest, res: Response) => {
   try {
     const data = await changeLeadOwner({
       leadId: req.params.id,
@@ -1291,21 +1300,17 @@ router.put('/:id/assign', authorize('Lead', 'edit'), async (req: AuthRequest, re
   }
 });
 
-router.get('/:id/owner-candidates', authorize('Lead', 'edit'), async (req: AuthRequest, res: Response) => {
+router.get('/:id/owner-candidates', authorize('Lead', 'assign'), async (req: AuthRequest, res: Response) => {
   try {
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
-      select: { id: true, ownerId: true },
-    });
-    if (!lead) return res.status(404).json({ success: false, error: 'Lead not found' });
-    const accessLead = await prisma.lead.findFirst({
-      where: { id: lead.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
       select: { id: true, tenantId: true, ownerId: true, creatorId: true },
     });
-    if (!accessLead || !(await canAccessLead(req.user!, accessLead))) {
+    if (!lead) return res.status(404).json({ success: false, error: 'Lead not found' });
+    if (!(await canAccessLead(req.user!, lead))) {
       return res.status(403).json({ success: false, error: 'You do not have access to this lead' });
     }
-    const candidates = await getEligibleLeadOwners(req.tenantId!, lead.ownerId);
+    const candidates = await getEligibleLeadOwners(lead.tenantId, lead.ownerId);
     res.json({ success: true, data: candidates });
   } catch (error) {
     console.error('Get lead owner candidates error:', error);
@@ -1316,7 +1321,7 @@ router.get('/:id/owner-candidates', authorize('Lead', 'edit'), async (req: AuthR
 router.get('/:id/owner-history', authorize('Lead', 'read'), async (req: AuthRequest, res: Response) => {
   try {
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
     });
 
     if (!lead) {
@@ -1327,7 +1332,7 @@ router.get('/:id/owner-history', authorize('Lead', 'read'), async (req: AuthRequ
       return res.status(403).json({ success: false, error: 'You do not have access to this lead' });
     }
 
-    const history = await getOwnerHistory(req.tenantId!, req.params.id);
+    const history = await getOwnerHistory(lead.tenantId, req.params.id);
     res.json({ success: true, data: history });
   } catch (error) {
     console.error('Get owner history error:', error);
@@ -1341,7 +1346,7 @@ router.get('/:id/audit-history', authorize('Lead', 'read'), async (req: AuthRequ
     const skip = (Number(page) - 1) * Number(limit);
 
     const lead = await prisma.lead.findFirst({
-      where: { id: req.params.id, tenantId: req.tenantId! },
+      where: { id: req.params.id, ...leadIdScope(req) },
       select: { id: true, tenantId: true, ownerId: true, creatorId: true },
     });
 
@@ -1354,7 +1359,7 @@ router.get('/:id/audit-history', authorize('Lead', 'read'), async (req: AuthRequ
     }
 
     const where: any = {
-      tenantId: req.tenantId!,
+      tenantId: lead.tenantId,
       OR: [{ leadId: lead.id }, { objectType: 'Lead', objectId: lead.id }],
     };
     if (action) where.action = action;
@@ -1374,7 +1379,7 @@ router.get('/:id/audit-history', authorize('Lead', 'read'), async (req: AuthRequ
 
     res.json({
       success: true,
-      data: logs,
+      data: await enrichAuditLogs(logs),
       pagination: {
         page: Number(page),
         limit: Number(limit),

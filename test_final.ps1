@@ -81,15 +81,38 @@ Login "priya.presales@test.com" "password123" | Out-Null
 $pLead = APost "/api/leads" @{firstName="Presales"; lastName="Workflow"; company="PWCorp"; source="WEBSITE"; phone=(New-TestPhone 3)}
 Pass "Presales creates lead: $($pLead.data.leadNumber)"
 
-$pInc = APutRaw "/api/leads/$($pLead.data.id)/status" '{"status":"INCOMING","note":"Customer interested"}'
-Pass "NEW -> INCOMING"
+# Spec §2/§22: presales record access = OWNER scope. Round Robin may assign the new
+# lead to a different presales user, so the workflow steps run as the assigned owner.
+$pPriyaId = $null
+try { $pPriyaId = (AGet "/api/auth/me").data.user.id } catch {}
+$pOwnerId = $pLead.data.ownerId
+$pActionEmail = $null
+if ($pOwnerId -and $pPriyaId -and $pOwnerId -ne $pPriyaId) {
+    Login "admin@dctcrm.com" "password123" | Out-Null
+    $pOwnerLookup = $null
+    try { $pOwnerLookup = Invoke-RestMethod -Uri "$baseUrl/api/users/$pOwnerId" -Headers (AuthHeaders) } catch {}
+    if ($pOwnerLookup -and $pOwnerLookup.data) { $pActionEmail = $pOwnerLookup.data.email }
+    if ($pActionEmail) {
+        Login $pActionEmail "password123" | Out-Null
+        if (-not $global:currentToken) { Login $pActionEmail "DctTest@123" | Out-Null }
+        Log "  Lead owner (Round Robin): $pActionEmail" "Gray"
+    }
+}
 
-$pPush = APostRaw "/api/leads/$($pLead.data.id)/push-to-svc" '{"reason":"Qualified for site visit"}'
-Pass "INCOMING -> PROSPECT (Push to SVC)"
-$assignedUserId = $pPush.data.owner.id
-$assignedName = "$($pPush.data.owner.firstName) $($pPush.data.owner.lastName)"
+$pIncOk = $false; $pIncErr = ""
+try { $pInc = APutRaw "/api/leads/$($pLead.data.id)/status" '{"status":"INCOMING","note":"Customer interested"}'; $pIncOk = ($pInc.success -eq $true) } catch { $pIncErr = $_.ErrorDetails.Message }
+if ($pIncOk) { Pass "NEW -> INCOMING" } else { Fail "NEW -> INCOMING" "rejected: $pIncErr" }
+
+$pPushOk = $false; $pPushErr = ""; $pPush = $null
+try { $pPush = APostRaw "/api/leads/$($pLead.data.id)/push-to-svc" '{"reason":"Qualified for site visit"}'; $pPushOk = ($pPush.success -eq $true) } catch { $pPushErr = $_.ErrorDetails.Message }
+if ($pPushOk) { Pass "INCOMING -> PROSPECT (Push to SVC)" } else { Fail "INCOMING -> PROSPECT (Push to SVC)" "rejected: $pPushErr" }
+$assignedUserId = if ($pPush) { $pPush.data.owner.id } else { $null }
+$assignedName = if ($pPush) { "$($pPush.data.owner.firstName) $($pPush.data.owner.lastName)" } else { "" }
 Log "  Assigned to: $assignedName (via Round Robin)" "Gray"
 
+# After the handoff the previous owner/creator no longer has record access (spec §22),
+# so the owner history / audit trail is read with the admin session.
+Login "admin@dctcrm.com" "password123" | Out-Null
 $pDetail = AGet "/api/leads/$($pLead.data.id)"
 if ($pDetail.data.ownerHistory.Count -ge 2) { Pass "Owner History on push" } else { Fail "Owner History" "Only $($pDetail.data.ownerHistory.Count) entries" }
 if ($pDetail.data.auditLogs.Count -ge 2) { Pass "Audit Log on push" } else { Fail "Audit Log" "Only $($pDetail.data.auditLogs.Count) entries" }
@@ -98,11 +121,12 @@ if ($pDetail.data.auditLogs.Count -ge 2) { Pass "Audit Log on push" } else { Fai
 # 3. SVC WORKFLOW
 # ============================================
 Log "`n=== SVC WORKFLOW ===" "Cyan"
-# Dynamically find SVC user email by ID
+# Dynamically find SVC user email by ID (admin session — presales no longer has USER_READ)
 $svcUserLookup = $null
+Login "admin@dctcrm.com" "password123" | Out-Null
 try { $svcUserLookup = Invoke-RestMethod -Uri "$baseUrl/api/users/$assignedUserId" -Headers (AuthHeaders) } catch {}
-$svcEmail = if ($svcUserLookup -and $svcUserLookup.data) { $svcUserLookup.data.email } else { $null }
-if ($svcEmail) {
+$svcEmail = if ($svcUserLookup -and $svcUserLookup.data -and $svcUserLookup.data.email) { $svcUserLookup.data.email } else { $null }
+if ($svcEmail -and ($svcEmail -is [string])) {
     Login $svcEmail "password123" | Out-Null
     if (-not $global:currentToken) { Login $svcEmail "DctTest@123" | Out-Null }
     Log "  SVC session: $svcEmail" "Gray"

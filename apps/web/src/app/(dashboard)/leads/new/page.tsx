@@ -21,10 +21,62 @@ const SOURCE_OPTIONS = [
   "REFERRAL",
   "COLD_CALL",
   "ADVERTISEMENT",
+  "PORTAL",
   "INSTAGRAM",
+  "TWITTER",
   "WHATSAPP",
+  "YOUTUBE",
+  "OTHER",
   "WALK_IN",
 ];
+
+const LEAD_CREATE_SECTIONS = [
+  {
+    name: "Contact Information",
+    fields: ["salutation", "firstName", "lastName", "title", "email", "phone", "mobile", "website"],
+  },
+  {
+    name: "Company Information",
+    fields: ["company", "industry", "annualRevenue", "numberOfEmployees"],
+  },
+  {
+    name: "Lead Details",
+    fields: ["projectId", "source", "status", "rating", "description"],
+  },
+  {
+    name: "Address",
+    fields: ["street", "city", "stateProvince", "country", "postalCode"],
+  },
+];
+
+const REQUIRED_LEAD_FIELDS = new Set(["lastName", "company", "source", "phone"]);
+
+function prepareLeadCreateLayout(layout: any) {
+  let configuredSections: any[] = [];
+  try {
+    const sections = typeof layout?.sections === "string"
+      ? JSON.parse(layout.sections)
+      : layout?.sections;
+    configuredSections = Array.isArray(sections) ? sections : [];
+  } catch {
+    configuredSections = [];
+  }
+
+  const standardFields = new Set(LEAD_CREATE_SECTIONS.flatMap((section) => section.fields));
+  const customSections = configuredSections
+    .map((section) => ({
+      ...section,
+      fields: Array.isArray(section.fields)
+        ? section.fields.filter((field: string) => !standardFields.has(field))
+        : [],
+    }))
+    .filter((section) => section.fields.length > 0);
+
+  return {
+    ...(layout || {}),
+    sections: [...LEAD_CREATE_SECTIONS, ...customSections],
+  };
+}
 
 export default function NewLeadPage() {
   const router = useRouter();
@@ -46,16 +98,22 @@ export default function NewLeadPage() {
     const loadData = async () => {
       try {
         const [projectsRes, layoutRes, fieldsRes] = await Promise.all([
-          projectApi.list(),
+          projectApi.listAll({ isActive: true }),
           objectManagerApi.getDefaultLayout("Lead"),
           objectManagerApi.listFields("Lead", { includeSystem: true }),
         ]);
-        setProjects(projectsRes.data.data || []);
-        setLayout(layoutRes.data.data);
+        setProjects(projectsRes);
+        setLayout(prepareLeadCreateLayout(layoutRes.data.data));
         setFields(
           (fieldsRes.data.data || []).map((field: any) =>
-            field.name === "source"
-              ? { ...field, label: "Lead Source", required: true }
+            REQUIRED_LEAD_FIELDS.has(field.name)
+              ? {
+                  ...field,
+                  ...(field.name === "source" ? { label: "Lead Source" } : {}),
+                  required: true,
+                  visible: true,
+                  editable: true,
+                }
               : field
           )
         );
@@ -181,6 +239,7 @@ export default function NewLeadPage() {
             onChange={handleFieldChange}
             layout={layout}
             fields={fields}
+            projects={projects}
             fieldErrors={fieldErrors}
           />
         )}

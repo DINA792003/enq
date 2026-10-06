@@ -35,7 +35,35 @@ interface SiteVisit {
   createdAt: string;
   createdBy: string;
   feedback?: string;
+  cancellationReason?: string;
 }
+
+// Business timezone: Asia/Kolkata (UTC+05:30)
+const istDayKey = (value: string | Date): string => {
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const ist = new Date(d.getTime() + (5 * 60 + 30) * 60 * 1000);
+  return ist.toISOString().slice(0, 10);
+};
+
+const timingBadge = (
+  visit: SiteVisit
+): { label: string; className: string } | null => {
+  if (visit.status === "COMPLETED") return null;
+  if (visit.status === "CANCELLED") {
+    return visit.cancellationReason?.startsWith("Automatically cancelled")
+      ? { label: "Overdue (Auto-cancelled)", className: "bg-amber-100 text-amber-800" }
+      : null;
+  }
+  const visitDay = istDayKey(visit.visitDate);
+  const today = istDayKey(new Date());
+  if (!visitDay) return null;
+  if (visitDay < today)
+    return { label: "Overdue", className: "bg-amber-100 text-amber-800" };
+  if (visitDay === today)
+    return { label: "Today", className: "bg-blue-100 text-blue-800" };
+  return { label: "Upcoming", className: "bg-slate-100 text-slate-700" };
+};
 
 const statusColors: Record<string, string> = {
   SCHEDULED: "bg-blue-100 text-blue-800",
@@ -93,6 +121,15 @@ const columns: ColumnDef<SiteVisit>[] = [
     cell: ({ row }) => {
       const date = new Date(row.getValue("visitDate"));
       return formatDateTime(date);
+    },
+  },
+  {
+    id: "timing",
+    header: "Timing",
+    cell: ({ row }) => {
+      const timing = timingBadge(row.original);
+      if (!timing) return <span className="text-muted-foreground">—</span>;
+      return <Badge className={timing.className}>{timing.label}</Badge>;
     },
   },
   {
@@ -189,6 +226,7 @@ export default function SiteVisitsPage() {
               ? `${item.creator.firstName} ${item.creator.lastName}`.trim()
               : "—",
             feedback: item.feedback || undefined,
+            cancellationReason: item.cancellationReason || undefined,
           }));
           setSiteVisits(mapped);
           setTotalItems(res.data.pagination?.total ?? mapped.length);

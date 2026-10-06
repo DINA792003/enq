@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/exhaustive-deps */
 
 import * as React from "react";
 import { objectManagerApi } from "@/lib/api";
@@ -48,6 +49,7 @@ interface LayoutDrivenFormProps {
   onSubmit?: (data: Record<string, any>) => void;
   layout?: any;
   fields?: any[];
+  projects?: { id: string; name: string; isActive?: boolean }[];
   fieldErrors?: Record<string, string>;
 }
 
@@ -59,6 +61,7 @@ export default function LayoutDrivenForm({
   onSubmit,
   layout: propLayout,
   fields: propFields,
+  projects = [],
   fieldErrors,
 }: LayoutDrivenFormProps) {
   const [layout, setLayout] = React.useState<any>(propLayout || null);
@@ -92,11 +95,34 @@ export default function LayoutDrivenForm({
     const raw = typeof layout.sections === "string"
       ? JSON.parse(layout.sections)
       : layout.sections;
-    return Array.isArray(raw) ? raw : [];
-  }, [layout]);
+    const configuredSections: LayoutSection[] = Array.isArray(raw) ? raw : [];
+    if (objectName !== "Lead" || configuredSections.some((section) => section.fields.includes("projectId"))) {
+      return configuredSections;
+    }
+    const leadDetailsIndex = configuredSections.findIndex((section) => section.name === "Lead Details");
+    if (leadDetailsIndex < 0) return [...configuredSections, { name: "Lead Details", fields: ["projectId"] }];
+    return configuredSections.map((section, index) => index === leadDetailsIndex
+      ? { ...section, fields: ["projectId", ...section.fields] }
+      : section);
+  }, [layout, objectName]);
+
+  const formFields = React.useMemo(() => {
+    if (objectName !== "Lead" || fields.some((field) => field.name === "projectId")) return fields;
+    return [...fields, {
+      name: "projectId",
+      label: "Project",
+      fieldType: "lookup",
+      required: false,
+      editable: true,
+      visible: true,
+      isSystemField: false,
+      isStandardField: true,
+      lookupObject: "Project",
+    }];
+  }, [fields, objectName]);
 
   const getFieldDef = (fieldName: string): LayoutField | undefined =>
-    fields.find((f) => f.name === fieldName);
+    formFields.find((f) => f.name === fieldName);
 
   const handleFieldChange = (fieldName: string, value: any) => {
     if (onChange) onChange(fieldName, value);
@@ -227,6 +253,25 @@ export default function LayoutDrivenForm({
         );
 
       case "lookup":
+        if (field.name === "projectId" || field.lookupObject === "Project") {
+          return (
+            <Select
+              value={value || "__no_project__"}
+              onValueChange={(selected) => handleFieldChange(field.name, selected === "__no_project__" ? null : selected)}
+              disabled={isDisabled}
+            >
+              <SelectTrigger aria-label={field.label}>
+                <SelectValue placeholder="Select Project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__no_project__">No Project</SelectItem>
+                {projects.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        }
         return (
           <Input
             value={value || ""}

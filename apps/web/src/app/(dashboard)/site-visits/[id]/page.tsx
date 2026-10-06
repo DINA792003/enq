@@ -10,6 +10,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { siteVisitApi } from "@/lib/api";
+import { getCurrentCoordinates } from "@/lib/geolocation";
 
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
@@ -153,10 +154,12 @@ export default function SiteVisitDetailPage() {
     }
     setIsActionLoading(true);
     try {
+      const coordinates = await getCurrentCoordinates();
       const res = await siteVisitApi.complete(params.id as string, {
         completedAt: crmLocalDateTimeToDate(completionTime.split("T")[0], completionTime.split("T")[1]).toISOString(),
         customerFeedback: customerFeedback.trim(),
         completionNotes: completionNotes.trim(),
+        ...coordinates,
       });
       if (res.data.success) {
         toast({ title: "Success", description: "Site visit marked as happened" });
@@ -164,7 +167,7 @@ export default function SiteVisitDetailPage() {
         await fetchSiteVisit();
       }
     } catch (err: any) {
-      toast({ title: "Error", description: err?.response?.data?.error || "Failed to complete site visit", variant: "destructive" as any });
+      toast({ title: "Error", description: err?.response?.data?.error || err?.message || "Failed to complete site visit", variant: "destructive" as any });
     } finally {
       setIsActionLoading(false);
     }
@@ -554,7 +557,7 @@ export default function SiteVisitDetailPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Complete Site Visit</DialogTitle>
-            <DialogDescription>Completion time, customer feedback, and notes are required.</DialogDescription>
+            <DialogDescription>Completion time, customer feedback, and notes are required. Your device location is checked once against the project site — the visit only completes within 100 metres.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">

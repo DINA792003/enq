@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable react-hooks/exhaustive-deps */
 
 import * as React from "react";
 import Link from "next/link";
@@ -7,6 +8,9 @@ import {
   ArrowLeft,
   ChevronDown,
   Filter,
+  GripVertical,
+  PanelLeftClose,
+  PanelLeftOpen,
   Play,
   Plus,
   Save,
@@ -322,7 +326,14 @@ export default function NewReportPage() {
   const [fieldSearch, setFieldSearch] = React.useState("");
   const [columnPickerOpen, setColumnPickerOpen] = React.useState(false);
   const [panel, setPanel] = React.useState<"outline" | "filters">("outline");
+  const [leftPanelWidth, setLeftPanelWidth] = React.useState(420);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = React.useState(false);
+  const [resizingPanel, setResizingPanel] = React.useState(false);
   const [result, setResult] = React.useState<Result | null>(null);
+  const panelTextSize = React.useMemo(() => {
+    if (leftPanelCollapsed) return 12;
+    return Math.min(15.5, Math.max(12.5, leftPanelWidth / 28));
+  }, [leftPanelCollapsed, leftPanelWidth]);
   const [loading, setLoading] = React.useState(true);
   const [running, setRunning] = React.useState(false);
   const [hasRun, setHasRun] = React.useState(false);
@@ -480,6 +491,67 @@ export default function NewReportPage() {
     document.addEventListener("pointerdown", handleOutsidePointer);
     return () => document.removeEventListener("pointerdown", handleOutsidePointer);
   }, []);
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey) return;
+
+      // Never hijack keys while typing, and never swallow Alt+←/→ — those are
+      // the browser's Back/Forward navigation on Windows/Linux.
+      const target = event.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.tagName === "SELECT" ||
+        target?.isContentEditable;
+      if (typing) return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") return;
+
+      if (event.key === "0" || event.key === "Escape") {
+        event.preventDefault();
+        setLeftPanelCollapsed(true);
+      }
+
+      if (event.key === "1") {
+        event.preventDefault();
+        setLeftPanelCollapsed(false);
+        setLeftPanelWidth(320);
+      }
+
+      if (event.key === "2") {
+        event.preventDefault();
+        setLeftPanelCollapsed(false);
+        setLeftPanelWidth(520);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleLeftPanelResize = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const container = event.currentTarget.parentElement;
+    if (!container) return;
+
+    const startX = event.clientX;
+    const startWidth = leftPanelWidth;
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const nextWidth = Math.min(760, Math.max(260, startWidth + delta));
+      setLeftPanelWidth(nextWidth);
+      setLeftPanelCollapsed(false);
+    };
+
+    const handleMouseUp = () => {
+      setResizingPanel(false);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    setResizingPanel(true);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }, [leftPanelWidth]);
 
   React.useEffect(() => {
     setRowGroupHighlight(0);
@@ -1170,6 +1242,14 @@ export default function NewReportPage() {
               <Button key={`undo-${historyVersion}`} variant="ghost" size="icon" aria-label="Undo" title="Undo" onClick={undoBuilderChange} disabled={historyRef.current.length === 0}><Undo2 className="h-4 w-4" /></Button>
               <Button key={`redo-${historyVersion}`} variant="ghost" size="icon" aria-label="Redo" title="Redo" className="border-l" onClick={redoBuilderChange} disabled={futureRef.current.length === 0}><Redo2 className="h-4 w-4" /></Button>
             </div>
+            <div className="flex items-center gap-2 rounded-full border border-slate-400 bg-slate-50 px-1.5">
+              <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-2 text-xs" onClick={() => { setLeftPanelCollapsed(true); }} title="Minimize left panel (Alt+0)">
+                <PanelLeftClose className="h-3.5 w-3.5" />
+              </Button>
+              <Button type="button" variant="ghost" size="sm" className="h-8 rounded-full px-2 text-xs" onClick={() => { setLeftPanelCollapsed(false); setLeftPanelWidth(420); }} title="Maximize left panel (Alt+2)">
+                <PanelLeftOpen className="h-3.5 w-3.5" />
+              </Button>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -1205,28 +1285,60 @@ export default function NewReportPage() {
         </div>
       </header>
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        <aside className="w-full shrink-0 border-b bg-white lg:w-[420px] lg:border-b-0 lg:border-r">
+        <aside
+          className={`relative shrink-0 border-b bg-white transition-all duration-200 ease-out lg:border-b-0 lg:border-r ${leftPanelCollapsed ? "hidden lg:block lg:w-0 lg:overflow-hidden lg:border-r-0" : "w-full lg:w-auto"}`}
+          style={
+            leftPanelCollapsed
+              ? { width: 0, minWidth: 0, maxWidth: 0 }
+              : {
+                  minWidth: 260,
+                  width: leftPanelWidth,
+                  fontSize: `${panelTextSize}px`,
+                }
+          }
+        >
+          {!leftPanelCollapsed && (
+            <div
+              aria-label="Resize left panel"
+              title="Drag to resize or use Alt + arrow keys"
+              onMouseDown={handleLeftPanelResize}
+              className="absolute -right-1 top-0 z-20 hidden h-full w-3 cursor-col-resize items-center justify-center lg:flex"
+            >
+              <GripVertical className="h-4 w-4 text-slate-400" />
+            </div>
+          )}
           <div className="flex min-h-16 items-center justify-between border-b px-6 py-3">
-            <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            <span className="font-semibold uppercase tracking-wide text-slate-500" style={{ fontSize: `${panelTextSize + 1}px` }}>
               Fields
             </span>
-            <button
-              type="button"
-              className="text-xs text-primary"
-              onClick={() => setFieldSearch("")}
-            >
-              Reset
-            </button>
+            <div className="flex items-center gap-2" style={{ fontSize: `${panelTextSize - 1}px` }}>
+              <button
+                type="button"
+                className="text-xs text-primary"
+                onClick={() => setFieldSearch("")}
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                className="text-[10px] font-medium uppercase tracking-wide text-slate-500"
+                onClick={() => setLeftPanelCollapsed((current) => !current)}
+              >
+                {leftPanelCollapsed ? "Expand" : "Minimize"}
+              </button>
+            </div>
           </div>
           <div className="flex border-b">
             <button
-              className={`flex-1 px-4 py-5 text-lg font-semibold ${panel === "outline" ? "border-b-4 border-primary text-slate-700" : "text-slate-500"}`}
+              className={`flex-1 px-4 py-5 font-semibold ${panel === "outline" ? "border-b-4 border-primary text-slate-700" : "text-slate-500"}`}
+              style={{ fontSize: `${panelTextSize + 2}px` }}
               onClick={() => setPanel("outline")}
             >
               <span className="mr-1 text-base">☷</span>Outline
             </button>
             <button
-              className={`flex-1 px-4 py-5 text-lg font-semibold ${panel === "filters" ? "border-b-4 border-primary text-slate-700" : "text-slate-500"}`}
+              className={`flex-1 px-4 py-5 font-semibold ${panel === "filters" ? "border-b-4 border-primary text-slate-700" : "text-slate-500"}`}
+              style={{ fontSize: `${panelTextSize + 2}px` }}
               onClick={() => setPanel("filters")}
             >
               <Filter className="mr-1 inline h-3.5 w-3.5" />

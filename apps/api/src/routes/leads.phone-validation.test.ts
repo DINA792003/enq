@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { leadSchema, normalizePhone, PHONE_DUPLICATE_ERROR } from '@dct-crm/shared';
+import { leadSchema, leadUpdateSchema, normalizePhone, PHONE_DUPLICATE_ERROR } from '@dct-crm/shared';
 import { buildLeadDeletionPlan } from './leads';
 
 const baseLead = {
@@ -54,6 +54,38 @@ describe('leadSchema phone', () => {
 
   it('partial still rejects empty phone when provided', () => {
     const result = leadSchema.partial().safeParse({ phone: '' });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('leadUpdateSchema', () => {
+  it('strips server-managed and relation fields returned by the lead detail API', () => {
+    const result = leadUpdateSchema.safeParse({
+      status: 'NEW',
+      lastName: 'Dup',
+      tenantId: 'tenant-1',
+      creatorId: 'creator-1',
+      rrQueueId: 'queue-1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      siteVisits: [],
+      opportunities: [],
+      activities: [],
+      tasks: [],
+      followUps: [],
+      auditLogs: [],
+      ownerHistory: [],
+      lastModified: { at: new Date().toISOString() },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ status: 'NEW', lastName: 'Dup' });
+    }
+  });
+
+  it('still rejects invalid values for editable fields', () => {
+    const result = leadUpdateSchema.safeParse({ status: 'NOT_A_STATUS', tenantId: 'tenant-1' });
     expect(result.success).toBe(false);
   });
 });

@@ -62,6 +62,42 @@ function buildDefaultSections(objectName: string, fieldNames: string[]): Section
   return sections;
 }
 
+function mergeLeadLayoutSections(existingSections: Section[]): Section[] {
+  const standardFields = new Set(LEAD_LAYOUT_SECTIONS.flatMap((section) => section.fields));
+  const standardSectionNames = new Set(LEAD_LAYOUT_SECTIONS.map((section) => section.name));
+  const includedCustomFields = new Set<string>();
+
+  const standardSections = LEAD_LAYOUT_SECTIONS.map((section) => {
+    const sectionExtras = existingSections
+      .filter((existing) => existing.name === section.name)
+      .flatMap((existing) => existing.fields)
+      .filter((field) => !standardFields.has(field) && !includedCustomFields.has(field));
+    sectionExtras.forEach((field) => includedCustomFields.add(field));
+    return { ...section, fields: [...section.fields, ...sectionExtras] };
+  });
+
+  const customSections = existingSections
+    .filter((section) => !standardSectionNames.has(section.name))
+    .map((section) => ({
+      ...section,
+      fields: section.fields.filter(
+        (field) => !standardFields.has(field) && !includedCustomFields.has(field),
+      ),
+    }))
+    .filter((section) => section.fields.length > 0);
+
+  return [...standardSections, ...customSections];
+}
+
+function parseLayoutSections(sections: unknown): Section[] {
+  try {
+    const parsed = typeof sections === 'string' ? JSON.parse(sections) : sections;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function ensureDefaultLayoutForObjects() {
   console.log('Ensuring default layouts for all objects...\n');
 
@@ -107,6 +143,17 @@ export async function ensureDefaultLayoutForObjects() {
       });
 
       if (existingLayout) {
+        if (object.name.toLowerCase() === 'lead') {
+          const existingSections = parseLayoutSections(existingLayout.sections);
+          const mergedSections = mergeLeadLayoutSections(existingSections);
+          if (JSON.stringify(existingSections) !== JSON.stringify(mergedSections)) {
+            await prisma.pageLayout.update({
+              where: { id: existingLayout.id },
+              data: { sections: JSON.stringify(mergedSections) },
+            });
+            console.log(`  Repaired Default Layout for ${object.name}`);
+          }
+        }
         skippedCount++;
         continue;
       }

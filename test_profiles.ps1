@@ -63,36 +63,59 @@ $pl1 = AuthPost $presales.session "/api/leads" @{firstName="Presales"; lastName=
 Log "Created lead: $($pl1.data.leadNumber)" "Gray"
 Pass "Lead Number auto-generated"
 
+# Spec §2/§22: presales record access = OWNER scope. Round Robin may assign the
+# new lead to a different presales user, so the workflow steps run as the owner.
+$plSess = $presales.session
+if ($pl1.data.ownerId -and $pl1.data.ownerId -ne $presales.data.user.id) {
+    $plAdminSess = (Login "admin@dctcrm.com" "password123").session
+    $plOwner = $null
+    try { $plOwner = AuthGet $plAdminSess "/api/users/$($pl1.data.ownerId)" } catch { }
+    if ($plOwner -and $plOwner.data -and $plOwner.data.email) {
+        foreach ($pw in @("password123", "DctTest@123")) {
+            $cand = Login $plOwner.data.email $pw
+            if ($cand -and $cand.data -and $cand.data.token) { $plSess = $cand.session; break }
+        }
+        Log "  Lead owner (Round Robin): $($plOwner.data.email)" "Gray"
+    }
+}
+
 # Verify lead number in list
 $listCheck = AuthGet $presales.session "/api/leads?limit=1"
 if ($listCheck.data[0].leadNumber) { Pass "Lead Number in list" } else { Fail "Lead Number in list" "No leadNumber field" }
 
-# Verify lead number in search
-$searchCheck = AuthGet $presales.session "/api/leads?search=$($pl1.data.leadNumber)"
+# Verify lead number in search (as the owner — creator keeps no access once RR assigns)
+$searchCheck = AuthGet $plSess "/api/leads?search=$($pl1.data.leadNumber)"
 if ($searchCheck.pagination.total -ge 1) { Pass "Lead Number searchable" } else { Fail "Lead Number searchable" "No results" }
 
 # Test status change without note -> FAIL
-ShouldFailRaw $presales.session "PUT" "/api/leads/$($pl1.data.id)/status" '{"status":"INCOMING"}' "Status change without note rejected"
+ShouldFailRaw $plSess "PUT" "/api/leads/$($pl1.data.id)/status" '{"status":"INCOMING"}' "Status change without note rejected"
 
 # Test status change with empty note -> FAIL
-ShouldFailRaw $presales.session "PUT" "/api/leads/$($pl1.data.id)/status" '{"status":"INCOMING","note":"   "}' "Status change with whitespace note rejected"
+ShouldFailRaw $plSess "PUT" "/api/leads/$($pl1.data.id)/status" '{"status":"INCOMING","note":"   "}' "Status change with whitespace note rejected"
 
 # Move to Incoming
-$incomingResp = AuthPutRaw $presales.session "/api/leads/$($pl1.data.id)/status" '{"status":"INCOMING","note":"Customer contacted successfully"}'
+$incomingResp = AuthPutRaw $plSess "/api/leads/$($pl1.data.id)/status" '{"status":"INCOMING","note":"Customer contacted successfully"}'
 Log "  Status: $($incomingResp.data.status)" "Gray"
-Pass "Status NEW -> INCOMING"
+if ($incomingResp.success -and $incomingResp.data.status -eq "INCOMING") { Pass "Status NEW -> INCOMING" } else { Fail "Status NEW -> INCOMING" "rejected: $($incomingResp.error)" }
 
 # Test push to SVC without reason -> FAIL
-ShouldFailRaw $presales.session "POST" "/api/leads/$($pl1.data.id)/push-to-svc" '{}' "Push to SVC without reason rejected"
+ShouldFailRaw $plSess "POST" "/api/leads/$($pl1.data.id)/push-to-svc" '{}' "Push to SVC without reason rejected"
 
 # Push to SVC
-$pushResp = AuthPostRaw $presales.session "/api/leads/$($pl1.data.id)/push-to-svc" '{"reason":"Lead is qualified for site visit"}'
+$pushResp = AuthPostRaw $plSess "/api/leads/$($pl1.data.id)/push-to-svc" '{"reason":"Lead is qualified for site visit"}'
 Log "  Pushed to SVC. Status: $($pushResp.data.status), Owner: $($pushResp.data.owner.firstName) $($pushResp.data.owner.lastName)" "Gray"
-Pass "Push to SVC with reason"
-Pass "SVC Round Robin assignment"
+if ($pushResp.success -and $pushResp.data.ownerId -and $pushResp.data.ownerId -ne $pl1.data.ownerId) {
+    Pass "Push to SVC with reason"
+    Pass "SVC Round Robin assignment"
+} else {
+    Fail "Push to SVC with reason" "rejected: $($pushResp.error)"
+    Fail "SVC Round Robin assignment" "owner unchanged"
+}
 
-# Verify owner history
-$leadAfterPush = AuthGet $presales.session "/api/leads/$($pl1.data.id)"
+# Verify owner history — after the handoff the previous owner/creator no longer
+# has record access (spec §22), so history is read with the admin session.
+if (-not $plAdminSess) { $plAdminSess = (Login "admin@dctcrm.com" "password123").session }
+$leadAfterPush = AuthGet $plAdminSess "/api/leads/$($pl1.data.id)"
 $oh = $leadAfterPush.data.ownerHistory
 if ($oh.Count -ge 2) { Pass "Owner History recorded" } else { Fail "Owner History" "Only $($oh.Count) entries" }
 
